@@ -1156,8 +1156,11 @@ function currentPre(){
   n = n.nodeType === 3 ? n.parentNode : n;
   return n && n.closest ? n.closest("pre.code") : null;
 }
+/* text goes in through execCommand so the browser's undo stack records it
+   (Ctrl+Z); the Range API is only a fallback for engines without the command */
 function insertText(t){
   const s = getSelection(); if(!s.rangeCount) return;
+  if(document.execCommand("insertText", false, t)) return;
   const r = s.getRangeAt(0); r.deleteContents();
   const node = document.createTextNode(t);
   r.insertNode(node); r.setStartAfter(node); r.collapse(true);

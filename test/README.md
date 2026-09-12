@@ -61,8 +61,8 @@ Inside `beforeParse` (before the page script runs) the harness:
   timers control them — call `app.flush()` to run the save debounce, toasts,
   the 500 ms autosave and the rAF header sync;
 - defines `document.execCommand` (records every call in `app.exec.calls`;
-  `insertHTML` is actually applied at the selection so the Code block / Table /
-  Link buttons produce real DOM);
+  `insertHTML` and `insertText` are actually applied at the selection so the
+  Code block / Table / Link buttons and plain-text pastes produce real DOM);
 - reflects `HTMLElement.contentEditable` to the attribute (JSDOM only knows the
   attribute), which makes the inline-rename label focusable;
 - stubs `navigator.clipboard`, `Blob`, `URL.createObjectURL` and `<a>.click()` so

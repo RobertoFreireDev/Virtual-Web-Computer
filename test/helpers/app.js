@@ -71,14 +71,20 @@ export function loadApp({ stored, storage = "ok", clipboardMode = "ok" } = {}) {
         set(v) { this.setAttribute("contenteditable", String(v)); }
       });
 
-      /* execCommand: record every call, apply insertHTML for real */
+      /* execCommand: record every call, apply insertHTML / insertText for real */
       document.execCommand = function (cmd, ui = false, val = null) {
         exec.calls.push({ cmd, val });
-        if (cmd !== "insertHTML") return true;
+        if (cmd !== "insertHTML" && cmd !== "insertText") return true;
         const s = window.getSelection();
         if (!s.rangeCount) return false;
         const r = s.getRangeAt(0);
         r.deleteContents();
+        if (cmd === "insertText") {
+          const node = document.createTextNode(val);
+          r.insertNode(node); r.setStartAfter(node); r.collapse(true);
+          s.removeAllRanges(); s.addRange(r);
+          return true;
+        }
         const frag = r.createContextualFragment(val);
         const last = frag.lastChild;
         const hasBlock = [...frag.children].some(c => BLOCK.test(c.tagName));

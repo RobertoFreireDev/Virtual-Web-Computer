@@ -254,6 +254,69 @@ describe("paste", () => {
     expect(editor.querySelector("x")).toBeNull();
   });
 
+  /* Regression: plain-text pastes were written into the DOM with the Range API,
+     which the browser's undo stack does not see — Ctrl+Z could not revert them.
+     Text must go in through execCommand("insertText"), the undoable path. */
+  describe("can be undone with Ctrl+Z", () => {
+    const CS = [
+      "using System;",
+      "using System.Collections.Generic;",
+      "",
+      "// 1. Output and Variables",
+      'Console.WriteLine("=== Welcome to the C# Assistant ===");',
+      'string appName = "Task & Math Demo";',
+      "int version = 2026;",
+      'Console.WriteLine($"Running {appName} (Version {version})\\n");',
+      "",
+      "if (double.TryParse(input, out double number))",
+      "{",
+      "    double squared = Math.Pow(number, 2);",
+      "}",
+      'List<string> tasks = new List<string> { "Learn C# basics", "Write clean code" };',
+      "Console.ReadKey();"
+    ].join("\n");
+
+    it("a plain-text paste into a paragraph goes through execCommand insertText", () => {
+      caret(editor.querySelector("p").firstChild, 0);
+      const n = app.exec.calls.length;
+      paste(editor, { text: CS });
+      expect(app.exec.calls.slice(n)).toEqual([{ cmd: "insertText", val: CS }]);
+      expect(editor.textContent).toContain('Console.WriteLine("=== Welcome to the C# Assistant ===");');
+      expect(content()).toContain("List&lt;string&gt; tasks");
+    });
+
+    it("a paste into a code block goes through execCommand insertText", () => {
+      click(app.$("tbBlock"));
+      const pre = editor.querySelector("pre.code");
+      pre.textContent = "";
+      caret(pre, 0);
+      const n = app.exec.calls.length;
+      paste(editor, { html: "<pre>" + CS + "</pre>", text: CS });
+      expect(app.exec.calls.slice(n)).toEqual([{ cmd: "insertText", val: CS }]);
+      expect(pre.textContent).toBe(CS);
+    });
+
+    it("Tab inside a code block is undoable too", () => {
+      click(app.$("tbBlock"));
+      const pre = editor.querySelector("pre.code");
+      pre.textContent = "abc";
+      caret(pre.firstChild, 3);
+      const n = app.exec.calls.length;
+      key(editor, "Tab");
+      expect(app.exec.calls.slice(n)).toEqual([{ cmd: "insertText", val: "  " }]);
+      expect(pre.textContent).toBe("abc  ");
+    });
+
+    it("Tab in ordinary text is undoable too", () => {
+      const p = editor.querySelector("p");
+      caret(p.firstChild, 5);
+      const n = app.exec.calls.length;
+      key(editor, "Tab");
+      expect(app.exec.calls.slice(n)).toEqual([{ cmd: "insertText", val: "\t" }]);
+      expect(p.textContent).toBe("alpha\t text");
+    });
+  });
+
   it("inserts plain text inside code blocks even when HTML is available", () => {
     click(app.$("tbBlock"));
     const pre = editor.querySelector("pre.code");
@@ -446,7 +509,8 @@ describe("keyboard outside code blocks", () => {
     caret(p.firstChild, 5);
     const n = app.exec.calls.length;
     expect(key(editor, "Tab").defaultPrevented).toBe(true);
-    expect(app.exec.calls.length).toBe(n);                 // no indent/outdent command
+    expect(app.exec.calls.slice(n).map(c => c.cmd)).not.toContain("indent");   // no indent/outdent command
+    expect(app.exec.calls.slice(n).map(c => c.cmd)).not.toContain("outdent");
     expect(editor.querySelector("blockquote")).toBeNull();
     expect(p.textContent).toBe("alpha\t text");
     const r = app.window.getSelection().getRangeAt(0);
