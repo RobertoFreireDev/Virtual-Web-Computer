@@ -202,6 +202,8 @@ body.nav-closed aside,body.nav-closed .grip{display:none}
 .body h3{font-size:17px;font-weight:600}
 .body h4{font-size:15px;font-weight:600;color:var(--muted)}
 .body p{margin:0 0 1.05em}
+/* keep typed tabs (Tab key) visible instead of collapsing them to one space */
+.body p,.body h1,.body h2,.body h3,.body h4,.body li,.body blockquote,.body td,.body th{white-space:pre-wrap;tab-size:4}
 .body ul,.body ol{margin:0 0 1.05em;padding-left:1.35em}
 .body li{margin:.28em 0}
 .body li::marker{color:var(--accent)}
@@ -1012,7 +1014,26 @@ editor.addEventListener("keydown", e => {
     scheduleSync();
     return;
   }
-  if(e.key === "Tab"){ e.preventDefault(); document.execCommand(e.shiftKey ? "outdent" : "indent"); }
+  if(e.key === "Tab"){
+    e.preventDefault();
+    const s = getSelection(), n = s.rangeCount ? s.getRangeAt(0).startContainer : null;
+    const el = n && (n.nodeType === 3 ? n.parentNode : n);
+    if(el && el.closest && el.closest("li")){   // in a list Tab nests the item
+      document.execCommand(e.shiftKey ? "outdent" : "indent");
+    } else if(!e.shiftKey){                      // in text it is a plain tab character
+      insertText("\t");
+    } else {                                     // Shift+Tab takes back the tab before the caret
+      const r = s.getRangeAt(0);
+      let t = n, at = r.startOffset;                   // the text node and offset just before the caret
+      if(n.nodeType !== 3){ t = n.childNodes[at - 1]; at = t && t.nodeType === 3 ? t.length : -1; }
+      if(r.collapsed && t && at > 0 && t.data[at - 1] === "\t"){
+        t.deleteData(at - 1, 1);
+        r.setStart(t, at - 1); r.collapse(true);
+        s.removeAllRanges(); s.addRange(r);
+      }
+    }
+    raw = editor.innerHTML; commit();
+  }
   if(e.key === "Backspace"){                   // Backspace at the very start of a quote unwraps it
     const q = quoteStart();
     if(q){ e.preventDefault(); unquote(q); raw = editor.innerHTML; commit(); }

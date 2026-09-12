@@ -268,8 +268,40 @@ describe("keyboard inside a code block", () => {
 });
 
 describe("keyboard outside code blocks", () => {
-  it("Tab indents, Shift+Tab outdents", () => {
-    caret(editor.querySelector("p").firstChild, 0);
+  it("Tab in text inserts a tab character instead of indenting into a quote", () => {
+    const p = editor.querySelector("p");
+    caret(p.firstChild, 5);
+    const n = app.exec.calls.length;
+    expect(key(editor, "Tab").defaultPrevented).toBe(true);
+    expect(app.exec.calls.length).toBe(n);                 // no indent/outdent command
+    expect(editor.querySelector("blockquote")).toBeNull();
+    expect(p.textContent).toBe("alpha\t text");
+    const r = app.window.getSelection().getRangeAt(0);
+    expect(r.collapsed).toBe(true);
+    expect(p.contains(r.startContainer)).toBe(true);
+    expect(content()).toContain("alpha\t text");
+  });
+
+  it("Shift+Tab removes the tab before the caret and does nothing otherwise", () => {
+    const p = editor.querySelector("p");
+    caret(p.firstChild, 5);
+    key(editor, "Tab");
+    expect(p.textContent).toBe("alpha\t text");
+    expect(key(editor, "Tab", { shiftKey: true }).defaultPrevented).toBe(true);
+    expect(p.textContent).toBe("alpha text");
+    expect(editor.querySelector("blockquote")).toBeNull();
+    key(editor, "Tab", { shiftKey: true });
+    expect(p.textContent).toBe("alpha text");
+  });
+
+  it("tabs are shown: text containers keep whitespace", () => {
+    const css = app.q("style").textContent;
+    expect(css).toMatch(/\.body p[,{][^{]*\{[^}]*white-space:pre-wrap/);
+  });
+
+  it("Tab / Shift+Tab in a list item still nest and un-nest it", () => {
+    editor.innerHTML = "<ul><li>one</li><li>two</li></ul>";
+    caret(editor.querySelectorAll("li")[1].firstChild, 0);
     expect(key(editor, "Tab").defaultPrevented).toBe(true);
     expect(lastExec().cmd).toBe("indent");
     key(editor, "Tab", { shiftKey: true });

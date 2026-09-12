@@ -61,6 +61,7 @@ state and functions are top-level bindings, in this order:
 | In code block: `Enter` / `Tab` / `Shift+Enter` | Newline / two spaces / new paragraph after the block |
 | In table cell: `Tab` / `Shift+Tab` | Next / previous cell; `Tab` in the last cell adds a row |
 | `Backspace` at the start of a quote | Unwraps the `<blockquote>` (`quoteStart`/`unquote`) — the browser can't when it is the first block |
+| In text: `Tab` / `Shift+Tab` | Insert / remove a tab character (`white-space:pre-wrap; tab-size:4` on text containers makes it visible). In a list item they still `indent`/`outdent` (nest the item) |
 | In quote: `Enter` / `Shift+Enter` | Ends the quote, text after the caret goes into a new `<p>` (`currentQuote`/`splitQuote`) / line break inside the quote |
 
 ### Data flow while editing
