@@ -80,6 +80,7 @@ input,select,textarea{font:inherit;color:inherit}
 .btn.primary:hover{filter:brightness(1.08)}
 .btn.danger{color:var(--danger);border-color:#3a2a2a}
 .btn.danger:hover{background:rgba(224,104,95,.12)}
+.btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
 .sep{width:1px;height:20px;background:var(--line)}
 
 /* ─────────────────────────── shell ─────────────────────────── */
@@ -294,6 +295,22 @@ body.nav-closed aside,body.nav-closed .grip{display:none}
 }
 .dialog input:focus{border-color:var(--accent);outline:none}
 .dialog .acts{display:flex;justify-content:flex-end;gap:8px}
+.dialog.wide{width:520px}
+.pick-head{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  margin-bottom:8px;font-size:12px;color:var(--muted)
+}
+.pick-head .btn{height:26px;padding:0 10px;font-size:12px}
+.pick-tree{
+  max-height:min(50vh,380px);overflow:auto;border:1px solid var(--line);border-radius:6px;
+  background:var(--ink);padding:4px;margin-bottom:16px;
+}
+.pick-row{display:flex;align-items:center;gap:6px;height:28px;padding:0 6px;border-radius:5px;cursor:pointer;user-select:none}
+.pick-row:hover{background:var(--panel-2)}
+.pick-row input{width:14px;height:14px;margin:0;accent-color:var(--accent);cursor:pointer;flex:none}
+.pick-row .gl{display:inline-flex;width:16px;flex:none;color:var(--muted)}
+.pick-row .gl svg{width:14px;height:14px}
+.pick-row .label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
 
 #toast{
   position:fixed;left:50%;bottom:26px;transform:translate(-50%,14px);z-index:90;
@@ -997,16 +1014,21 @@ new MutationObserver(scheduleSync).observe(editor, { childList:true, subtree:tru
 addEventListener("resize", scheduleSync);
 
 /* ═══════════════════════════ export / import ═══════════════════════════ */
-$("btnExport").onclick = () => {
+$("btnExport").onclick = async () => {
   if(mode !== "view") commit();
-  const payload = { app:"virtualpc", version:1, exportedAt:new Date().toISOString(), tree:db.tree };
+  if(!db.tree.length){ toast("Nothing to export yet"); return; }
+  const picked = await pickBox("Export", "Choose which folders and pages to include in the backup.", db.tree, "Export");
+  if(!picked) return;
+  const tree = prune(db.tree, picked);
+  let count = 0; each(n => { if(n.type === "page") count++; }, tree);
+  const payload = { app:"virtualpc", version:1, exportedAt:new Date().toISOString(), tree };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type:"application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "virtualpc-" + new Date().toISOString().slice(0, 10) + ".json";
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  toast("Exported");
+  toast("Exported " + count + " page" + (count !== 1 ? "s" : ""));
 };
 $("btnImport").onclick = () => $("file").click();
 $("file").onchange = async e => {
@@ -1017,8 +1039,11 @@ $("file").onchange = async e => {
   catch(err){ toast("That file isn't valid JSON"); return; }
   const tree = Array.isArray(data) ? data : data.tree;
   if(!Array.isArray(tree)){ toast("No Virtual PC data found in that file"); return; }
-  const nodes = normalize(tree);
-  if(!nodes.length){ toast("That backup is empty"); return; }
+  const all = normalize(tree);
+  if(!all.length){ toast("That backup is empty"); return; }
+  const picked = await pickBox("Import", "Choose which folders and pages to bring in from " + file.name + ".", all, "Import");
+  if(!picked) return;
+  const nodes = prune(all, picked);
   let count = 0; each(() => count++, nodes);
   const choice = await choiceBox("Import " + count + " item" + (count > 1 ? "s" : ""),
     "Replace everything currently stored, or add the imported items alongside it?",
@@ -1029,6 +1054,18 @@ $("file").onchange = async e => {
   save(); renderTree(); render();
   toast(choice === "replace" ? "Library replaced" : "Items merged in");
 };
+/* deep-copy `nodes`, keeping pages whose id is in `keep` and folders that are
+   kept themselves or hold something that is */
+function prune(nodes, keep){
+  const out = [];
+  for(const n of nodes){
+    if(n.type === "folder"){
+      const children = prune(n.children || [], keep);
+      if(keep.has(n.id) || children.length) out.push({ ...n, children });
+    }else if(keep.has(n.id)) out.push({ ...n });
+  }
+  return out;
+}
 function normalize(arr){
   const out = [];
   for(const n of arr || []){
@@ -1048,7 +1085,7 @@ function openDialog(html, focusSel){
   const f = focusSel && dialog.querySelector(focusSel);
   if(f){ f.focus(); f.select && f.select(); }
 }
-function closeDialog(){ veil.classList.remove("open"); dialog.innerHTML = ""; }
+function closeDialog(){ veil.classList.remove("open"); dialog.classList.remove("wide"); dialog.innerHTML = ""; }
 function confirmBox(title, msg, label = "OK"){
   return new Promise(res => {
     openDialog(`<h3>${esc(title)}</h3><p>${esc(msg)}</p><div class="acts">
@@ -1098,6 +1135,65 @@ function choiceBox(title, msg, choices){
       <button class="btn ghost" data-v="">Cancel</button>${btns}</div>`);
     dialog.querySelectorAll("[data-v]").forEach(b => b.onclick = () => { closeDialog(); res(b.dataset.v || null); });
     veil._esc = () => { closeDialog(); res(null); };
+  });
+}
+/* tree of checkboxes; resolves with a Set of chosen ids, or null on cancel */
+function pickBox(title, msg, nodes, label){
+  return new Promise(res => {
+    let rows = "";
+    each((n, depth) => {
+      rows += `<label class="pick-row" style="padding-left:${6 + depth * 18}px">
+        <input type="checkbox" data-id="${n.id}" data-type="${n.type}" checked>
+        <span class="gl">${ICON[n.type]}</span><span class="label">${esc(n.name)}</span></label>`;
+    }, nodes);
+    dialog.classList.add("wide");
+    openDialog(`<h3>${esc(title)}</h3><p>${esc(msg)}</p>
+      <div class="pick-head"><span id="pickCount"></span><span>
+        <button class="btn ghost" data-sel="1">Select all</button>
+        <button class="btn ghost" data-sel="0">Select none</button></span></div>
+      <div class="pick-tree">${rows}</div>
+      <div class="acts"><button class="btn ghost" data-a="0">Cancel</button>
+      <button class="btn primary" data-a="1">${esc(label)}</button></div>`);
+    const boxes = [...dialog.querySelectorAll(".pick-tree input")];
+    const byId = new Map(boxes.map(b => [b.dataset.id, b]));
+    const ok = dialog.querySelector('[data-a="1"]'), count = dialog.querySelector("#pickCount");
+    const boxOf = n => byId.get(n.id);
+    /* folders reflect their descendants: all → checked, some → indeterminate */
+    function refresh(list = nodes){
+      let checked = 0, total = 0;
+      for(const n of list){
+        const b = boxOf(n);
+        if(n.type === "folder" && n.children && n.children.length){
+          const [c, t] = refresh(n.children);
+          b.checked = c === t; b.indeterminate = c > 0 && c < t;
+          checked += c; total += t;
+        }else{
+          b.indeterminate = false;
+          if(b.checked) checked++; total++;
+        }
+      }
+      if(list === nodes){
+        count.textContent = checked + " of " + total + " selected";
+        ok.disabled = !checked;
+      }
+      return [checked, total];
+    }
+    const setAll = (list, v) => each(n => { boxOf(n).checked = v; }, list);
+    boxes.forEach(b => b.onchange = () => {
+      const n = find(b.dataset.id, nodes);
+      if(n && n.node.type === "folder") setAll(n.node.children || [], b.checked);
+      refresh();
+    });
+    dialog.querySelectorAll("[data-sel]").forEach(b => b.onclick = () => { setAll(nodes, b.dataset.sel === "1"); refresh(); });
+    refresh();
+    const done = go => {
+      const set = new Set(boxes.filter(b => b.checked || b.indeterminate).map(b => b.dataset.id));
+      closeDialog(); res(go && set.size ? set : null);
+    };
+    ok.onclick = () => done(true);
+    dialog.querySelector('[data-a="0"]').onclick = () => done(false);
+    veil._esc = () => done(false);
+    ok.focus();
   });
 }
 veil.onmousedown = e => { if(e.target === veil && veil._esc) veil._esc(); };
@@ -1174,7 +1270,7 @@ WHERE s.created_at &gt;= '2026-01-01'
 GROUP BY p.name
 ORDER BY best DESC;
 </pre>
-<blockquote>Export writes a single JSON file with every folder and page. Import can replace your library or merge into it.</blockquote>
+<blockquote>Export lets you pick which folders and pages go into a single JSON file. Import shows the same picker for the file's contents, then can replace your library or merge into it.</blockquote>
 <h3>Good to know</h3>
 <ol>
 <li>Data is saved automatically as you type.</li>
