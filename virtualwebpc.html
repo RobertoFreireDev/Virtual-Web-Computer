@@ -1013,7 +1013,38 @@ editor.addEventListener("keydown", e => {
     return;
   }
   if(e.key === "Tab"){ e.preventDefault(); document.execCommand(e.shiftKey ? "outdent" : "indent"); }
+  if(e.key === "Backspace"){                   // Backspace at the very start of a quote unwraps it
+    const q = quoteStart();
+    if(q){ e.preventDefault(); unquote(q); raw = editor.innerHTML; commit(); }
+  }
 });
+/* the <blockquote> whose first character the collapsed caret sits before, else null */
+function quoteStart(){
+  const s = getSelection();
+  if(!s.rangeCount || !s.isCollapsed) return null;
+  const r = s.getRangeAt(0);
+  let n = r.startContainer;
+  const q = (n.nodeType === 3 ? n.parentNode : n).closest("blockquote");
+  if(!q || !editor.contains(q)) return null;
+  const probe = document.createRange();
+  probe.setStart(q, 0); probe.setEnd(r.startContainer, r.startOffset);
+  return probe.toString() === "" ? q : null;
+}
+/* replace the quote by its blocks (loose inline content is wrapped in a <p>) and put the caret at the start */
+function unquote(q){
+  const frag = document.createDocumentFragment();
+  let p = null;
+  while(q.firstChild){
+    const c = q.firstChild;
+    if(c.nodeType === 1 && /^(P|H[1-6]|UL|OL|PRE|TABLE|HR|BLOCKQUOTE|DIV)$/.test(c.tagName)){ p = null; frag.appendChild(c); continue; }
+    if(!p){ p = document.createElement("p"); frag.appendChild(p); }
+    p.appendChild(c);
+  }
+  if(!frag.firstChild){ p = document.createElement("p"); p.innerHTML = "<br>"; frag.appendChild(p); }
+  const first = frag.firstChild;
+  q.replaceWith(frag);
+  caretTo(first, false);
+}
 
 /* ═══════════════════════════ code block headers ═══════════════════════════ */
 const layer = $("blocks");

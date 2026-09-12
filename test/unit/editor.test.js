@@ -282,6 +282,56 @@ describe("keyboard outside code blocks", () => {
   });
 });
 
+describe("Backspace at the start of a quote", () => {
+  const sel = () => app.window.getSelection().getRangeAt(0);
+
+  it("turns a quote on the first line back into a paragraph", () => {
+    editor.innerHTML = "<blockquote>quoted</blockquote><p>after</p>";
+    const q = editor.querySelector("blockquote");
+    caret(q.firstChild, 0);
+    const ev = key(editor, "Backspace");
+    expect(ev.defaultPrevented).toBe(true);
+    expect(editor.querySelector("blockquote")).toBeNull();
+    expect(editor.innerHTML).toBe("<p>quoted</p><p>after</p>");
+    expect(sel().collapsed).toBe(true);
+    expect(editor.firstElementChild.contains(sel().startContainer)).toBe(true);
+    expect(content()).toBe("<p>quoted</p><p>after</p>");
+  });
+
+  it("removes an empty quote that is the only content", () => {
+    editor.innerHTML = "<blockquote><br></blockquote>";
+    caret(editor.querySelector("blockquote"), 0);
+    key(editor, "Backspace");
+    expect(editor.innerHTML).toBe("<p><br></p>");
+    expect(sel().startContainer).toBe(editor.firstElementChild);
+  });
+
+  it("keeps paragraphs already inside the quote", () => {
+    editor.innerHTML = "<blockquote><p>one</p><p>two</p></blockquote>";
+    caret(editor.querySelector("blockquote p").firstChild, 0);
+    key(editor, "Backspace");
+    expect(editor.innerHTML).toBe("<p>one</p><p>two</p>");
+  });
+
+  it("is left to the browser when the caret is not at the very start of the quote", () => {
+    editor.innerHTML = "<blockquote>quoted</blockquote>";
+    caret(editor.querySelector("blockquote").firstChild, 2);
+    expect(key(editor, "Backspace").defaultPrevented).toBe(false);
+    expect(editor.querySelector("blockquote")).not.toBeNull();
+
+    editor.innerHTML = "<blockquote><p>one</p><p>two</p></blockquote>";
+    caret(editor.querySelectorAll("blockquote p")[1].firstChild, 0);
+    expect(key(editor, "Backspace").defaultPrevented).toBe(false);
+    expect(editor.querySelector("blockquote")).not.toBeNull();
+  });
+
+  it("is left to the browser when text is selected", () => {
+    editor.innerHTML = "<blockquote>quoted</blockquote>";
+    caret(editor.querySelector("blockquote"));   // selects the whole content
+    expect(key(editor, "Backspace").defaultPrevented).toBe(false);
+  });
+});
+
 describe("editing end to end", () => {
   it("typing, then Done, persists the new content", () => {
     editor.innerHTML = "<p>final</p>";

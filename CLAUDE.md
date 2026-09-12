@@ -60,6 +60,7 @@ state and functions are top-level bindings, in this order:
 | `Enter`/`Tab` in title | Jump into the body (starts editing in view mode) |
 | In code block: `Enter` / `Tab` / `Shift+Enter` | Newline / two spaces / new paragraph after the block |
 | In table cell: `Tab` / `Shift+Tab` | Next / previous cell; `Tab` in the last cell adds a row |
+| `Backspace` at the start of a quote | Unwraps the `<blockquote>` (`quoteStart`/`unquote`) — the browser can't when it is the first block |
 
 ### Data flow while editing
 
