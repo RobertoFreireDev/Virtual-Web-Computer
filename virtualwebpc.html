@@ -410,6 +410,7 @@ body.nav-closed aside,body.nav-closed .grip{display:none}
         <button data-cmd="formatBlock" data-val="blockquote" title="Quote">&ldquo;</button>
         <div class="tb-sep"></div>
         <button id="tbBlock" title="Insert code block">Code block</button>
+        <button id="tbImage" title="Paste the image on the clipboard (e.g. a screenshot) into the page">Image</button>
         <div class="tb-sep"></div>
         <button id="tbLink" title="Link">Link</button>
         <button id="tbTable" title="Insert table">Table</button>
@@ -949,10 +950,12 @@ source.addEventListener("input", () => {
   typeTimer = setTimeout(() => { raw = unformat(source.value); commit(); }, 500);
 });
 
-/* paste as clean html (or plain text inside code blocks) */
+/* paste as clean html (or plain text inside code blocks); a copied image is embedded as base64 */
 editor.addEventListener("paste", e => {
   e.preventDefault();
   const inPre = currentPre();
+  const img = !inPre && [...(e.clipboardData.files || [])].find(f => f.type.startsWith("image/"));
+  if(img){ insertImage(img); return; }
   const html = e.clipboardData.getData("text/html");
   const text = e.clipboardData.getData("text/plain");
   if(inPre || !html) insertText(text);
@@ -991,6 +994,32 @@ $("tbBlock").onclick = () => {
   document.execCommand("insertHTML", false,
     `<pre class="code" data-lang="plain">${esc(sel || "// code")}\n</pre><p><br></p>`);
   raw = editor.innerHTML; commit();
+};
+/* embed an image Blob/File as <img src="data:image/…"> at the caret; resolves once it is in the page */
+function insertImage(blob){
+  return new Promise(res => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      editor.focus();
+      document.execCommand("insertHTML", false, `<img src="${attr(fr.result)}" alt="">`);
+      raw = editor.innerHTML; commit(); res(true);
+    };
+    fr.onerror = () => { toast("Could not read the image"); res(false); };
+    fr.readAsDataURL(blob);
+  });
+}
+$("tbImage").onmousedown = e => e.preventDefault();
+$("tbImage").onclick = async () => {
+  if(!navigator.clipboard || !navigator.clipboard.read){ toast("Clipboard blocked by the browser — paste with Ctrl+V instead"); return; }
+  const s = getSelection(), keep = s.rangeCount ? s.getRangeAt(0).cloneRange() : null;   // the permission prompt can drop the caret
+  let items;
+  try{ items = await navigator.clipboard.read(); }
+  catch(e){ toast("Clipboard access denied — paste with Ctrl+V instead"); return; }
+  const item = items.find(i => i.types.some(t => t.startsWith("image/")));
+  if(!item){ toast("No image on the clipboard"); return; }
+  const blob = await item.getType(item.types.find(t => t.startsWith("image/")));
+  if(keep){ s.removeAllRanges(); s.addRange(keep); }
+  await insertImage(blob);
 };
 $("tbLink").onmousedown = e => e.preventDefault();
 $("tbLink").onclick = async () => {

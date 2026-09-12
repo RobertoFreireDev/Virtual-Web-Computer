@@ -23,7 +23,7 @@ describe("toolbar formatting buttons", () => {
   });
 
   it("prevent mousedown so the editor keeps its selection", () => {
-    for (const b of app.qa("#toolbar button[data-cmd], #tbBlock, #tbLink, #tbTable")) {
+    for (const b of app.qa("#toolbar button[data-cmd], #tbBlock, #tbImage, #tbLink, #tbTable")) {
       expect(mousedown(b).defaultPrevented).toBe(true);
     }
   });
@@ -181,6 +181,82 @@ describe("paste", () => {
     paste(editor, { html: "<b>bold</b>", text: "bold" });
     expect(pre.querySelector("b")).toBeNull();
     expect(pre.textContent.startsWith("bold")).toBe(true);
+  });
+});
+
+/* a 1×1 PNG as the browser would hand it over from a screenshot */
+const PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="), c => c.charCodeAt(0));
+const png = () => new app.window.File([PNG], "shot.png", { type: "image/png" });
+/* FileReader finishes on the real event loop; wait until the <img> lands (or give up) */
+async function untilImg() {
+  for (let i = 0; i < 50 && !editor.querySelector("img"); i++) await new Promise(r => setImmediate(r));
+  return editor.querySelector("img");
+}
+const DATA = "data:image/png;base64,iVBORw0KGgo";
+
+describe("images", () => {
+  it("Ctrl+V with a copied image embeds it as a base64 <img> and commits", async () => {
+    caret(editor.querySelector("p").firstChild, 0);
+    const ev = paste(editor, { files: [png()], text: "" });
+    expect(ev.defaultPrevented).toBe(true);
+    const img = await untilImg();
+    expect(img.getAttribute("src").startsWith(DATA)).toBe(true);
+    expect(content()).toContain(DATA);
+    expect(app.$("status").textContent).toBe("Saved");
+  });
+
+  it("prefers the image file over any HTML on the clipboard, except inside code blocks", async () => {
+    caret(editor.querySelector("p").firstChild, 0);
+    paste(editor, { files: [png()], html: "<b>x</b>", text: "x" });
+    expect(await untilImg()).not.toBeNull();
+    expect(editor.querySelector("b")).toBeNull();
+
+    click(app.$("tbBlock"));
+    const pre = editor.querySelector("pre.code");
+    caret(pre.firstChild, 0);
+    paste(editor, { files: [png()], text: "shot" });
+    expect(pre.querySelector("img")).toBeNull();
+    expect(pre.textContent.startsWith("shot")).toBe(true);
+  });
+
+  it("Image button reads the clipboard and inserts the image at the caret", async () => {
+    app.clipboard.image = png();
+    caret(editor.querySelector("p").firstChild, 0);
+    click(app.$("tbImage"));
+    const img = await untilImg();
+    expect(img.getAttribute("src").startsWith(DATA)).toBe(true);
+    expect(img.getAttribute("alt")).toBe("");
+    expect(content()).toContain(DATA);
+    expect(app.clipboard.calls).toBe(1);
+  });
+
+  it("Image button toasts when the clipboard has no image", async () => {
+    click(app.$("tbImage"));
+    await tick(); await tick();
+    expect(app.toastText()).toBe("No image on the clipboard");
+    expect(editor.querySelector("img")).toBeNull();
+  });
+
+  it("Image button toasts when clipboard access is denied or unavailable", async () => {
+    app.clipboard.mode = "blocked";
+    click(app.$("tbImage"));
+    await tick(); await tick();
+    expect(app.toastText()).toBe("Clipboard access denied — paste with Ctrl+V instead");
+
+    app.close();
+    app = loadApp({ stored: { tree: sampleTree(), selected: "p1" }, clipboardMode: "noread" });
+    app.call("setMode", "edit");
+    click(app.$("tbImage"));
+    expect(app.toastText()).toBe("Clipboard blocked by the browser — paste with Ctrl+V instead");
+  });
+
+  it("base64 images survive the sanitiser and the source view round trip", async () => {
+    caret(editor.querySelector("p").firstChild, 0);
+    paste(editor, { files: [png()] });
+    await untilImg();
+    app.call("setMode", "source");
+    app.call("setMode", "view");
+    expect(app.$("viewer").querySelector("img").getAttribute("src").startsWith(DATA)).toBe(true);
   });
 });
 

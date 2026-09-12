@@ -33,7 +33,7 @@ export function loadApp({ stored, storage = "ok", clipboardMode = "ok" } = {}) {
   const exec = { calls: [] };
   const downloads = [];
   const blobs = new Map();
-  const clipboard = { text: null, mode: clipboardMode, calls: 0 };
+  const clipboard = { text: null, image: null, mode: clipboardMode, calls: 0 };
 
   const dom = new JSDOM(html, {
     runScripts: "dangerously",
@@ -107,9 +107,18 @@ export function loadApp({ stored, storage = "ok", clipboardMode = "ok" } = {}) {
             if (clipboard.mode !== "ok") return Promise.reject(new Error("blocked"));
             clipboard.text = text;
             return Promise.resolve();
+          },
+          /* resolves with ClipboardItem-like entries; `clipboard.image` (a Blob) is served as image/png */
+          read() {
+            clipboard.calls++;
+            if (clipboard.mode !== "ok") return Promise.reject(new Error("blocked"));
+            const items = [{ types: ["text/plain"], getType: () => Promise.resolve(new window.Blob(["txt"])) }];
+            if (clipboard.image) items.push({ types: ["image/png"], getType: () => Promise.resolve(clipboard.image) });
+            return Promise.resolve(items);
           }
         }
       });
+      if (clipboardMode === "noread") delete window.navigator.clipboard.read;
 
       /* downloads */
       const OrigBlob = window.Blob;

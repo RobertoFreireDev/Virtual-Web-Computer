@@ -47,7 +47,12 @@ loadApp()                                        // first run → seeded library
 loadApp({ stored: { tree: sampleTree(), selected: "p1" } })   // preloaded localStorage
 loadApp({ storage: "blocked" })                  // localStorage throws → memory-only mode
 loadApp({ clipboardMode: "blocked" })            // navigator.clipboard rejects
+loadApp({ clipboardMode: "noread" })             // no navigator.clipboard.read (older browsers)
 ```
+
+`app.clipboard.image = new app.window.File([...], "x.png", { type: "image/png" })`
+makes `navigator.clipboard.read()` serve that image (for the Image toolbar
+button); `paste(el, { files: [file] })` simulates Ctrl+V of a copied image.
 
 Inside `beforeParse` (before the page script runs) the harness:
 

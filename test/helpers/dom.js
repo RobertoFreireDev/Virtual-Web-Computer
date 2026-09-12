@@ -73,10 +73,11 @@ export function drag(from, to, yFrac = 0.5) {
   dragEvent(from, "dragend", { dt });
 }
 
-export function paste(el, { html = "", text = "" } = {}) {
+/** `files` is a list of File/Blob objects (e.g. a screenshot) to expose as clipboardData.files */
+export function paste(el, { html = "", text = "", files = [] } = {}) {
   const w = win(el);
   const ev = new w.Event("paste", { bubbles: true, cancelable: true });
-  Object.defineProperty(ev, "clipboardData", { value: { getData: t => (t === "text/html" ? html : text) } });
+  Object.defineProperty(ev, "clipboardData", { value: { files, getData: t => (t === "text/html" ? html : text) } });
   el.dispatchEvent(ev);
   return ev;
 }
