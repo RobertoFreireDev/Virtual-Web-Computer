@@ -253,6 +253,19 @@ body.nav-closed aside,body.nav-closed .grip{display:none}
 .blk .grow{flex:1}
 .blk .x{width:23px;height:23px;display:grid;place-items:center;border-radius:4px;color:var(--faint)}
 .blk .x:hover{background:rgba(224,104,95,.14);color:var(--danger)}
+/* tables — while editing, a strip above the active table holds the row/column tools */
+.body[contenteditable="true"] table{margin-top:46px}
+.body[contenteditable="true"] td:empty::after,.body[contenteditable="true"] th:empty::after{content:"\200B"}
+.tbl{
+  position:absolute;height:28px;display:flex;align-items:center;gap:2px;z-index:3;
+  padding:0 4px;background:#131a22;border:1px solid var(--line);border-radius:6px;
+  font:11.5px var(--sans);color:var(--muted);white-space:nowrap;
+}
+.tbl button{height:22px;padding:0 7px;border-radius:4px;color:var(--muted);display:inline-flex;align-items:center}
+.tbl button:hover{background:var(--raise);color:var(--text)}
+.tbl .sep{width:1px;height:14px;background:var(--line);margin:0 3px}
+.tbl .x{width:23px;padding:0;justify-content:center;color:var(--faint)}
+.tbl .x:hover{background:rgba(224,104,95,.14);color:var(--danger)}
 .t-comment{color:var(--t-comment);font-style:italic}
 .t-string{color:var(--t-string)}
 .t-number{color:var(--t-number)}
@@ -405,6 +418,19 @@ body.nav-closed aside,body.nav-closed .grip{display:none}
           <div class="body" id="viewer"></div>
           <div class="body" id="editor" contenteditable="true" spellcheck="false" style="display:none"></div>
           <div id="blocks"></div>
+          <div class="tbl" id="tbl" style="display:none">
+            <button data-t="rowAbove" title="Insert row above">+ Row &#8593;</button>
+            <button data-t="rowBelow" title="Insert row below">+ Row &#8595;</button>
+            <button data-t="delRow" title="Delete this row">&#8722; Row</button>
+            <span class="sep"></span>
+            <button data-t="colLeft" title="Insert column left">+ Col &#8592;</button>
+            <button data-t="colRight" title="Insert column right">+ Col &#8594;</button>
+            <button data-t="delCol" title="Delete this column">&#8722; Col</button>
+            <span class="sep"></span>
+            <button data-t="delTable" class="x" title="Delete this table">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 4.4h10M6.4 4.4V3.1h3.2v1.3M4.4 4.4l.6 8.5h6l.6-8.5"/></svg>
+            </button>
+          </div>
         </div>
         <textarea id="source" spellcheck="false" style="display:none"></textarea>
       </div>
@@ -975,6 +1001,17 @@ editor.addEventListener("keydown", e => {
       return;
     }
   }
+  const cell = currentCell();
+  if(cell && e.key === "Tab"){                 // Tab walks the cells; past the last one it adds a row
+    e.preventDefault();
+    const cells = [...cell.closest("table").rows].flatMap(r => [...r.cells]);
+    const i = cells.indexOf(cell);
+    let to = cells[i + (e.shiftKey ? -1 : 1)];
+    if(!to && !e.shiftKey){ to = addRow(cell, true).parentNode.cells[0]; raw = editor.innerHTML; commit(); }
+    if(to) caretTo(to, false);
+    scheduleSync();
+    return;
+  }
   if(e.key === "Tab"){ e.preventDefault(); document.execCommand(e.shiftKey ? "outdent" : "indent"); }
 });
 
@@ -1009,7 +1046,7 @@ function scheduleSync(){
   requestAnimationFrame(() => { syncQueued = false; syncBlocks(); });
 }
 function syncBlocks(){
-  if(mode !== "edit"){ layer.innerHTML = ""; return; }
+  if(mode !== "edit"){ layer.innerHTML = ""; syncTable(); return; }
   const pres = [...editor.querySelectorAll("pre.code")];
   while(layer.children.length > pres.length) layer.lastChild.remove();
   while(layer.children.length < pres.length) layer.appendChild(makeHead());
@@ -1024,9 +1061,105 @@ function syncBlocks(){
     const sel = h.querySelector("select");
     if(document.activeElement !== sel) sel.value = pre.dataset.lang;
   });
+  syncTable();
 }
 new MutationObserver(scheduleSync).observe(editor, { childList:true, subtree:true, characterData:true, attributes:true });
 addEventListener("resize", scheduleSync);
+
+/* ═══════════════════════════ table tools ═══════════════════════════ */
+/* a bar with row/column buttons floats above the table the caret is in.
+   Cells are addressed by position (cellIndex) — colspan/rowspan are not expanded. */
+const tbl = $("tbl");
+function currentCell(){
+  const s = getSelection();
+  if(!s.rangeCount) return null;
+  let n = s.getRangeAt(0).startContainer;
+  n = n.nodeType === 3 ? n.parentNode : n;
+  const cell = n && n.closest ? n.closest("td,th") : null;
+  return cell && editor.contains(cell) ? cell : null;
+}
+function blankCell(tag){ const c = document.createElement(tag); c.innerHTML = "<br>"; return c; }
+/* every op takes the current cell, mutates the table and returns the cell to put the caret in */
+/* a header is a <thead> row, or a first row made of <th> */
+function isHeader(tr){ return tr.parentNode.tagName === "THEAD" || (tr.rowIndex === 0 && !!tr.cells[0] && tr.cells[0].tagName === "TH"); }
+/* rows are never added to the header: from a header cell the new row becomes the first body row */
+function addRow(cell, below){
+  const tr = cell.parentNode, table = tr.closest("table"), header = isHeader(tr);
+  const nr = document.createElement("tr");
+  [...tr.cells].forEach(c => nr.appendChild(blankCell(header ? "td" : c.tagName)));
+  if(!header) tr.parentNode.insertBefore(nr, below ? tr.nextSibling : tr);
+  else{
+    const first = [...table.rows].find(r => !isHeader(r));
+    if(first) first.parentNode.insertBefore(nr, first);
+    else (table.tBodies[0] || table.appendChild(document.createElement("tbody"))).appendChild(nr);
+  }
+  return nr.cells[cell.cellIndex];
+}
+function addCol(cell, after){
+  const i = cell.cellIndex;
+  let focus = null;
+  [...cell.closest("table").rows].forEach(row => {
+    const ref = row.cells[i], c = blankCell((ref || row.cells[row.cells.length - 1] || cell).tagName);
+    if(ref) ref.parentNode.insertBefore(c, after ? ref.nextSibling : ref); else row.appendChild(c);
+    if(row === cell.parentNode) focus = c;
+  });
+  return focus;
+}
+function removeTable(table){
+  const p = document.createElement("p"); p.innerHTML = "<br>";
+  table.replaceWith(p);
+  return p;
+}
+const TABLE_OPS = {
+  rowAbove: cell => addRow(cell, false),
+  rowBelow: cell => addRow(cell, true),
+  colLeft:  cell => addCol(cell, false),
+  colRight: cell => addCol(cell, true),
+  delRow(cell){
+    let tr = cell.parentNode; const table = tr.closest("table");
+    if(isHeader(tr)){                          // the header stays; remove the first body row instead
+      tr = [...table.rows].find(r => !isHeader(r));
+      if(!tr){ toast("The header row stays — delete the table to remove it"); return cell; }
+    }
+    if(table.rows.length <= 1) return removeTable(table);
+    const i = tr.rowIndex; tr.remove();
+    const row = table.rows[Math.min(i, table.rows.length - 1)];
+    return row.cells[Math.min(cell.cellIndex, row.cells.length - 1)];
+  },
+  delCol(cell){
+    const tr = cell.parentNode, table = tr.closest("table"), i = cell.cellIndex;
+    if(tr.cells.length <= 1) return removeTable(table);
+    [...table.rows].forEach(row => row.cells[i] && row.cells[i].remove());
+    return tr.cells[Math.min(i, tr.cells.length - 1)];
+  },
+  delTable: cell => removeTable(cell.closest("table"))
+};
+tbl.querySelectorAll("button").forEach(b => {
+  b.onmousedown = e => e.preventDefault();
+  b.onclick = async () => {
+    const cell = tbl._cell;
+    if(!cell || !cell.isConnected) return;
+    if(b.dataset.t === "delTable"){
+      const ok = await confirmBox("Delete table?", "Everything in it will be removed from this page.", "Delete");
+      if(!ok || !cell.isConnected) return;
+    }
+    const focus = TABLE_OPS[b.dataset.t](cell);
+    editor.focus(); caretTo(focus, false);
+    raw = editor.innerHTML; commit(); syncBlocks();
+  };
+});
+function syncTable(){
+  const cell = mode === "edit" ? currentCell() : null;
+  tbl._cell = cell;
+  tbl.style.display = cell ? "" : "none";
+  if(!cell) return;
+  const base = $("page").getBoundingClientRect(), r = cell.closest("table").getBoundingClientRect();
+  tbl.style.left = (r.left - base.left) + "px";
+  tbl.style.top  = (r.top  - base.top - 36) + "px";
+}
+document.addEventListener("selectionchange", () => { if(mode === "edit") scheduleSync(); });
+editor.addEventListener("click", scheduleSync);
+editor.addEventListener("keyup", scheduleSync);
 
 /* ═══════════════════════════ export / import ═══════════════════════════ */
 $("btnExport").onclick = async () => {
@@ -1285,6 +1418,9 @@ WHERE s.created_at &gt;= '2026-01-01'
 GROUP BY p.name
 ORDER BY best DESC;
 </pre>
+<h3>Tables</h3>
+<p>The <strong>Table</strong> button inserts one. While the caret is in a cell, a small bar above the table adds or removes rows and columns (the header row stays put &#8212; rows added from it go into the body). <code>Tab</code> moves to the next cell and adds a row after the last one.</p>
+<table><thead><tr><th>Item</th><th>Qty</th></tr></thead><tbody><tr><td>Potion</td><td>3</td></tr><tr><td>Rope</td><td>1</td></tr></tbody></table>
 <blockquote>Export lets you pick which folders and pages go into a single JSON file. Import shows the same picker for the file's contents, then can replace your library or merge into it.</blockquote>
 <h3>Good to know</h3>
 <ol>

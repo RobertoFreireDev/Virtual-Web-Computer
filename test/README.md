@@ -33,6 +33,7 @@ Requires Node 18+ (developed on Node 24). No browser is needed.
 | `unit/document.test.js` | `open`, `crumbs`, `render`, `decorate` (copy button), `setMode` (view/edit/source), `format`, `commit`, Edit/Done/HTML buttons, title input & Enter/Tab, `tail`, `caretTo`, click-below-text, autosave debounce. |
 | `unit/editor.test.js` | Toolbar `execCommand` buttons, Code block / Table / Link buttons (with dialog), paste handling, `currentPre`/`insertText`, keyboard inside and outside code blocks. |
 | `unit/code-blocks.test.js` | Floating code-block headers: `makeHead`, `syncBlocks` positioning, language `<select>`, delete button, MutationObserver/rAF scheduling, resize. |
+| `unit/tables.test.js` | Table tools: `#tbl` bar markup, `currentCell`, `syncTable` positioning/visibility and its triggers, every row/column button (header rows are protected: adds go to the body, `− Row` removes the first body row), delete table (confirm), stale-bar guards, `Tab`/`Shift+Tab` between cells and `Tab` past the last cell. |
 | `unit/dialogs.test.js` | `openDialog`/`closeDialog`, `confirmBox`, `promptBox`, `linkBox`, `choiceBox`, `pickBox` (indeterminate folders, select all/none, disabled OK), Escape / veil-click priority. |
 | `unit/export-import.test.js` | `prune`, `normalize`, Export button (picker → JSON download → toast), Import flow (invalid JSON, empty, picker, Merge/Replace), round-trip. |
 | `unit/sidebar-shortcuts.test.js` | Resize grip (clamp 190–520, persist), `toggleNav`, Ctrl+S / Ctrl+E / Ctrl+\ / Ctrl+F / Escape, `beforeunload`. |
@@ -90,3 +91,10 @@ failing (because it now passes) — remove the `.fails` at that point.
   overrides it with `rect(el, {...})`.
 - `Selection.toString()` works, so "wrap the selection in a code block" and the
   link-name prefill are tested for real.
+- JSDOM does not fire `selectionchange`; table tests place the caret with
+  `caret()` and call `app.call("syncBlocks")` (which runs `syncTable()`) to do
+  what the browser would do on its own.
+- `expect(nodeA).toBe(nodeB)` on two *different* JSDOM nodes crashes vitest's
+  diff printer with `Cannot read properties of undefined (reading 'name')`
+  instead of a readable failure. When comparing nodes that may differ, use
+  `expect(a === b).toBe(true)`.

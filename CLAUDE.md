@@ -41,7 +41,8 @@ state and functions are top-level bindings, in this order:
 | highlighting | `LANGS`, `highlight()` | Regex with named groups per language; output uses `.t-comment`, `.t-string`, `.t-number`, `.t-keyword`, `.t-type`, `.t-fn`, `.t-tag`, `.t-attr`. |
 | document | `open`, `crumbs`, `render`, `decorate`, `commit`, `setMode`, `format`, `tail`, `caretTo` | `setMode()` moves `raw` between viewer / `#editor` (contenteditable) / `#source` (textarea). `decorate()` adds the language bar + Copy button to code blocks in view mode. `tail()` guarantees a trailing `<p>` so typing can continue after a block. |
 | editor commands | toolbar `data-cmd` buttons, `tbBlock`, `tbLink`, `tbTable`, paste & keydown handlers, `currentPre`, `insertText` | Formatting uses `document.execCommand`. Inside a `<pre>`: Enter = newline, Tab = two spaces, Shift/Ctrl+Enter = leave the block. |
-| code block headers | `makeHead`, `syncBlocks`, `scheduleSync`, `#blocks` layer | While editing, an absolutely-positioned header (language `<select>` + delete) floats over each `<pre>`, re-synced via MutationObserver → rAF and on resize. |
+| code block headers | `makeHead`, `syncBlocks`, `scheduleSync`, `#blocks` layer | While editing, an absolutely-positioned header (language `<select>` + delete) floats over each `<pre>`, re-synced via MutationObserver → rAF and on resize. `syncBlocks()` ends by calling `syncTable()`. |
+| table tools | `#tbl` bar, `currentCell`, `isHeader`, `addRow`, `addCol`, `removeTable`, `TABLE_OPS`, `syncTable` | While editing, `#tbl` (row above/below, delete row, column left/right, delete column, delete table) floats 36 px above the table the caret is in; `.body[contenteditable] table` gets `margin-top:46px` to make room. `syncTable()` binds `tbl._cell`, and is scheduled on `selectionchange`, editor `click`/`keyup` and every `syncBlocks()`. Every op takes the current cell, mutates the table and returns the cell to put the caret in; cells are addressed by `cellIndex` (colspan/rowspan are not expanded). The header (`<thead>` row, or a first row of `<th>`) is never grown or removed: rows added from a header cell become the first body row, `− Row` from the header removes the first body row (toast when there is none). Removing the only row/column, or `− Row` on the last row, replaces the table with `<p><br></p>`; delete table asks `confirmBox`. `Tab`/`Shift+Tab` in a cell move between cells; `Tab` in the last cell appends a row. |
 | export / import | `btnExport`, `#file` onchange, `prune`, `normalize`, `pickBox` | Export: pick items → JSON `{app:"virtualpc", version:1, exportedAt, tree}` named `virtualpc-YYYY-MM-DD.json`. Import: parse → `normalize` (new ids, sanitised content) → pick → Merge or Replace. |
 | dialogs | `openDialog`, `closeDialog`, `confirmBox`, `promptBox`, `linkBox`, `choiceBox`, `pickBox` | Promise-based, rendered into `#dialog` inside the `#veil`. Escape and a click on the veil call `veil._esc`. `promptBox` is currently unused. |
 | sidebar + shortcuts | `grip`, `toggleNav`, global `keydown` | Sidebar width clamped 190–520 px via the `--sw` CSS variable. |
@@ -58,6 +59,7 @@ state and functions are top-level bindings, in this order:
 | `Escape` | Close dialog → close menu → leave edit mode (in that priority) |
 | `Enter`/`Tab` in title | Jump into the body (starts editing in view mode) |
 | In code block: `Enter` / `Tab` / `Shift+Enter` | Newline / two spaces / new paragraph after the block |
+| In table cell: `Tab` / `Shift+Tab` | Next / previous cell; `Tab` in the last cell adds a row |
 
 ### Data flow while editing
 
@@ -65,7 +67,7 @@ state and functions are top-level bindings, in this order:
 2. Typing → `input` event → 500 ms debounce → `raw = editor.innerHTML; commit()`.
 3. `commit()` writes `raw` into `find(db.selected).node.content`, calls `save()`
    (250 ms debounce to `localStorage`) and flashes "Saved" in `#status`.
-4. Toolbar buttons, header selects and block deletion call `commit()` directly.
+4. Toolbar buttons, header selects, block deletion and the table bar call `commit()` directly.
 5. `Done` / `Ctrl+S` / `Escape` / `beforeunload` commit and return to view.
 
 ## Conventions
