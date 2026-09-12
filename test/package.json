@@ -1,0 +1,14 @@
+{
+  "name": "virtual-pc-tests",
+  "private": true,
+  "type": "module",
+  "description": "Unit tests for virtualwebpc.html",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0",
+    "vitest": "^3.2.4"
+  }
+}
