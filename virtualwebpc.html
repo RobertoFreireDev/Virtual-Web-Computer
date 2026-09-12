@@ -1168,8 +1168,19 @@ $("tbBlock").onclick = () => {
   editor.focus();
   if(currentPre()) return;                   // already inside a block
   const sel = getSelection().toString();
+  const had = new Set(editor.querySelectorAll("pre"));
   document.execCommand("insertHTML", false,
     `<pre class="code" data-lang="plain">${esc(sel || "// code")}\n</pre><p><br></p>`);
+  /* a block at the very top (or glued to another block) leaves no line to move the caret above it */
+  const pre = [...editor.querySelectorAll("pre")].find(p => !had.has(p));
+  if(pre && pre.parentNode === editor){
+    const prev = pre.previousElementSibling;
+    if(!prev || /^(PRE|TABLE|HR)$/.test(prev.tagName)){
+      const p = document.createElement("p");
+      p.innerHTML = "<br>";
+      pre.before(p);
+    }
+  }
   raw = editor.innerHTML; commit();
 };
 /* embed an image Blob/File as <img src="data:image/…"> at the caret; resolves once it is in the page */

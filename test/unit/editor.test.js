@@ -54,6 +54,13 @@ describe("Code block button", () => {
     expect(editor.querySelector("pre.code").innerHTML).toContain("&lt;b&gt;");
   });
 
+  it("keeps the paragraph the caret was in above the block", () => {
+    click(app.$("tbBlock"));
+    const pre = editor.querySelector("pre.code");
+    expect(pre.previousElementSibling.tagName).toBe("P");
+    expect(editor.querySelectorAll("p")).toHaveLength(2);   // no extra one added
+  });
+
   it("does nothing when the caret is already inside a block", () => {
     click(app.$("tbBlock"));
     const pre = editor.querySelector("pre.code");
@@ -62,6 +69,79 @@ describe("Code block button", () => {
     click(app.$("tbBlock"));
     expect(app.exec.calls.length).toBe(n);
     expect(editor.querySelectorAll("pre.code")).toHaveLength(1);
+  });
+});
+
+/* Regression: a code block as the first thing on the page, or two code blocks
+   back to back, left no line the caret could be moved into — there was no way
+   to get "above" the block or "between" the blocks to keep writing. */
+describe("Code block button — room to navigate around blocks", () => {
+  const sel = () => app.window.getSelection().getRangeAt(0);
+  /* the caret can be put in `el` and it is a real paragraph a person can type in */
+  const canStandIn = el => {
+    expect(el.tagName).toBe("P");
+    expect(el.outerHTML).toBe("<p><br></p>");
+    app.call("caretTo", el, false);
+    expect(sel().collapsed).toBe(true);
+    expect(el.contains(sel().startContainer)).toBe(true);
+    expect(app.call("currentPre")).toBeNull();          // not inside any block
+  };
+
+  it("a block inserted on an empty page gets an empty line above it", () => {
+    editor.innerHTML = "";
+    caret(editor, 0);
+    click(app.$("tbBlock"));
+    const pre = editor.querySelector("pre.code");
+    expect(editor.firstElementChild).not.toBe(pre);
+    canStandIn(pre.previousElementSibling);
+    expect(editor.firstElementChild).toBe(pre.previousElementSibling);
+    expect(pre.nextElementSibling.outerHTML).toBe("<p><br></p>");
+    expect(content().startsWith("<p><br></p><pre")).toBe(true);
+  });
+
+  it("a block inserted right after another block gets an empty line between them", () => {
+    editor.innerHTML = '<pre class="code" data-lang="plain">first\n</pre>';
+    caret(editor, 1);                                     // where a browser leaves the caret once the trailing <p> was consumed
+    click(app.$("tbBlock"));
+    const [a, b] = editor.querySelectorAll("pre.code");
+    expect(b).toBeDefined();
+    expect(a.nextElementSibling).not.toBe(b);
+    canStandIn(b.previousElementSibling);
+    expect(b.previousElementSibling.previousElementSibling).toBe(a);
+    expect(a.textContent).toBe("first\n");                // the existing block is untouched
+    expect(content()).toMatch(/<\/pre><p><br><\/p><pre/);
+  });
+
+  it("three blocks in a row are each separated by a line", () => {
+    editor.innerHTML = "";
+    caret(editor, 0);
+    for (let i = 0; i < 3; i++) {
+      click(app.$("tbBlock"));
+      const last = [...editor.querySelectorAll("pre.code")].at(-1);
+      caret(editor, [...editor.childNodes].indexOf(last) + 1);   // caret directly after the block, its trailing <p> dropped
+      last.nextElementSibling.remove();
+    }
+    const pres = editor.querySelectorAll("pre.code");
+    expect(pres).toHaveLength(3);
+    for (const pre of pres) canStandIn(pre.previousElementSibling);
+  });
+
+  it("a block inserted after a table or a divider also gets a line above it", () => {
+    for (const before of ["<table><tbody><tr><td>x</td></tr></tbody></table>", "<hr>"]) {
+      editor.innerHTML = before;
+      caret(editor, 1);
+      click(app.$("tbBlock"));
+      const pre = editor.querySelector("pre.code");
+      canStandIn(pre.previousElementSibling);
+      expect(pre.previousElementSibling.previousElementSibling).toBe(editor.firstElementChild);
+    }
+  });
+
+  it("does not add a line when there already is one above", () => {
+    click(app.$("tbBlock"));                              // caret was in the page's own paragraph
+    const pre = editor.querySelector("pre.code");
+    expect(pre.previousElementSibling.textContent).not.toBe("");
+    expect(editor.querySelectorAll("p")).toHaveLength(2); // the original + the trailing one
   });
 });
 
