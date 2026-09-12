@@ -253,6 +253,11 @@ body.nav-closed aside,body.nav-closed .grip{display:none}
 }
 .blk select:hover{color:var(--text);border-color:#31404d}
 .blk .grow{flex:1}
+.blk .fmt{
+  height:23px;padding:0 8px;border-radius:4px;
+  border:1px solid var(--line);color:var(--muted);font:11.5px var(--sans);
+}
+.blk .fmt:hover{color:var(--text);border-color:#31404d;background:var(--raise)}
 .blk .x{width:23px;height:23px;display:grid;place-items:center;border-radius:4px;color:var(--faint)}
 .blk .x:hover{background:rgba(224,104,95,.14);color:var(--danger)}
 /* tables — while editing, a strip above the active table holds the row/column tools */
@@ -796,6 +801,178 @@ function highlight(code, lang){
   });
 }
 
+/* ═══════════════════════════ code formatting ═══════════════════════════ */
+/* Every language gets a fmt(code) → string, run by the Format button in the block header
+   while editing. They are small pretty-printers, not parsers: strings and comments are
+   copied through, the rest is re-broken into lines and re-indented. Throw to refuse. */
+const SP = n => " ".repeat(n);
+const lf = s => s.replace(/\r\n?/g, "\n");
+/* joins finished lines: at most one blank line in a row, none at the end */
+const joinLines = lines => lines.join("\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+|\s+$/g, "");
+
+/* C-like syntaxes (C#, JavaScript, CSS): `{` `;` end a line, `}` starts one, indentation
+   follows the unclosed brackets. Inside ( ) and [ ] nothing is re-broken, so calls, `for(;;)`
+   heads and object/array literals passed as arguments keep their shape. */
+function fmtClike(code, unit, lineComment){
+  code = lf(code);
+  const n = code.length, lines = [];
+  let cur = "", depth = 0, start = 0, inl = 0, i = 0;
+  const flush = () => {
+    const t = cur.trim(); cur = "";
+    if(t){ let ind = start; if(/^[}\])]/.test(t)) ind = Math.max(0, ind - 1); lines.push(SP(ind * unit) + t); }
+    else lines.push("");
+    start = depth;
+  };
+  /* end the line here unless the source already does */
+  const nl = () => { while(code[i] === " " || code[i] === "\t") i++; if(code[i] !== "\n") flush(); };
+  while(i < n){
+    const c = code[i], d = code[i + 1];
+    if(c === "\n"){ flush(); i++; continue; }
+    if(lineComment && code.startsWith(lineComment, i)){ let j = code.indexOf("\n", i); if(j < 0) j = n; cur += code.slice(i, j); i = j; continue; }
+    if(c === "/" && d === "*"){ let j = code.indexOf("*/", i + 2); j = j < 0 ? n : j + 2; cur += code.slice(i, j); i = j; continue; }
+    if(c === '"' || c === "'" || c === "`"){
+      let j = i + 1;
+      while(j < n && code[j] !== c && (c === "`" || code[j] !== "\n")){ if(code[j] === "\\") j++; j++; }
+      if(j < n && code[j] === c) j++;
+      cur += code.slice(i, j); i = j; continue;
+    }
+    if(c === "(" || c === "["){ depth++; inl++; cur += c; i++; continue; }
+    if(c === ")" || c === "]"){ depth = Math.max(0, depth - 1); inl = Math.max(0, inl - 1); cur += c; i++; continue; }
+    if(c === "{"){ depth++; cur += c; i++; if(!inl) nl(); continue; }
+    if(c === "}"){
+      if(!inl && cur.trim()) flush();
+      depth = Math.max(0, depth - 1); cur += c; i++;
+      if(!inl){
+        while(code[i] === " " || code[i] === "\t") i++;
+        const rest = code.slice(i, i + 8);
+        if(/^(else|catch|finally|while)\b/.test(rest)) cur += " ";    // keep "} else {" together
+        else if(!/^[;,)\].]/.test(rest)) nl();
+      }
+      continue;
+    }
+    if(c === ";"){ cur += c; i++; if(!inl) nl(); continue; }
+    cur += c; i++;
+  }
+  flush();
+  return joinLines(lines);
+}
+function fmtJson(code){
+  let v;
+  try{ v = JSON.parse(code); }catch(e){ throw new Error("not valid JSON"); }
+  return JSON.stringify(v, null, 2);
+}
+/* SQL: keywords upper-cased, one clause per line, AND/OR indented under their clause,
+   sub-queries indented by their parentheses. Column lists stay on the clause line. */
+const SQL_WORDS = new Set([...LANGS.sql.re.source.matchAll(/\(\?<(?:keyword|fn)>\\b\(\?:([a-z_|]+)\)/g)].flatMap(m => m[1].split("|")));
+const SQL_CLAUSE = /^(select|from|where|group|order|having|limit|union|except|intersect|insert|values|update|set|delete|join|left|right|inner|full|cross|outer|and|or|with)$/;
+const SQL_MOD = /^(left|right|inner|full|cross|outer|union|group|order|insert|delete|natural)$/;   // "LEFT JOIN", "ORDER BY" …
+function fmtSql(code){
+  /* paren[d] = { ind: indent of the line that opened the parenthesis at depth d, own: it holds a clause } */
+  const unit = 2, lines = [], paren = [{ ind:-1, own:true }];
+  let line = "", ind = 0, pend = false, prev = "", betw = false, comment = false;
+  const nl = i => { if(line.trim()) lines.push(line.replace(/\s+$/, "")); ind = i; line = SP(ind * unit); pend = false; comment = false; };
+  const add = (t, tight) => {
+    if(comment) nl(ind);
+    if(pend && !tight && line && !/\s$/.test(line)) line += " ";
+    line += t; pend = false;
+  };
+  for(const m of lf(code).matchAll(/--[^\n]*|\/\*[\s\S]*?\*\/|'(?:[^']|'')*'|"[^"]*"|\[[^\]]*\]|\s+|[A-Za-z_]\w*|./g)){
+    const t = m[0];
+    if(/^\s+$/.test(t)){ pend = true; continue; }
+    if(t.startsWith("--")){ add(t); comment = true; continue; }
+    if(t === "("){ add("("); paren.push({ ind, own:false }); pend = false; continue; }
+    if(t === ")"){ const p = paren.length > 1 ? paren.pop() : paren[0]; if(p.own && p.ind >= 0) nl(p.ind); add(")", true); continue; }
+    if(t === ","){ add(",", true); continue; }
+    if(t === ";"){ add(";", true); nl(0); lines.push(""); prev = ""; continue; }
+    if(/^[A-Za-z_]/.test(t)){
+      const w = t.toLowerCase(), word = SQL_WORDS.has(w) ? t.toUpperCase() : t;
+      if(SQL_CLAUSE.test(w) && !SQL_MOD.test(prev)){
+        const p = paren[paren.length - 1], base = p.ind + 1;
+        if(w === "and" || w === "or"){ if(betw) betw = false; else nl(base + 1); }
+        else nl(base);
+        p.own = true;
+      }
+      add(word);
+      if(w === "between") betw = true;
+      prev = w; continue;
+    }
+    add(t);
+  }
+  nl(0);
+  return joinLines(lines);
+}
+/* HTML: one block tag per line, children indented; text and inline tags (<b>, <a> …) share a
+   line; script/style/pre/textarea contents are kept verbatim */
+const VOID_TAGS = /^(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr|!doctype)$/;
+const INLINE_TAGS = /^(a|abbr|b|code|em|i|kbd|mark|q|s|small|span|strike|strong|sub|sup|u)$/;
+function fmtHtml(code){
+  code = lf(code);
+  const n = code.length, lower = code.toLowerCase(), lines = [];
+  let ind = 0, i = 0, text = "";
+  const push = t => lines.push(SP(ind * 2) + t);
+  const flush = () => { const t = text.replace(/\s+/g, " ").trim(); if(t) push(t); text = ""; };
+  while(i < n){
+    if(code[i] !== "<"){ let j = code.indexOf("<", i); if(j < 0) j = n; text += code.slice(i, j); i = j; continue; }
+    if(code.startsWith("<!--", i)){ flush(); let j = code.indexOf("-->", i); j = j < 0 ? n : j + 3; push(code.slice(i, j).trim()); i = j; continue; }
+    let j = code.indexOf(">", i); j = j < 0 ? n : j + 1;
+    const tag = code.slice(i, j), m = /^<(\/?)([A-Za-z!][\w-]*)/.exec(tag);
+    if(!m){ text += tag; i = j; continue; }
+    const name = m[2].toLowerCase();
+    if(INLINE_TAGS.test(name)){ text += tag; i = j; continue; }
+    flush();
+    if(m[1]){ ind = Math.max(0, ind - 1); push(tag); i = j; continue; }
+    if(/^(script|style|pre|textarea)$/.test(name)){
+      const e = lower.indexOf("</" + name, j);
+      if(e >= 0){ let k = code.indexOf(">", e); k = k < 0 ? n : k + 1; push(code.slice(i, k)); i = k; continue; }
+    }
+    push(tag); i = j;
+    if(!VOID_TAGS.test(name) && !/\/>$/.test(tag)) ind++;
+  }
+  flush();
+  return joinLines(lines);
+}
+/* Python: indentation is meaning, so only its width is normalised — every level becomes 4 spaces */
+function fmtPython(code){
+  const stack = [0];
+  return joinLines(lf(code).replace(/\t/g, SP(4)).split("\n").map(l => {
+    const t = l.trim(); if(!t) return "";
+    const lead = /^ */.exec(l)[0].length;
+    while(lead < stack[stack.length - 1]) stack.pop();
+    if(lead > stack[stack.length - 1]) stack.push(lead);
+    return SP((stack.length - 1) * 4) + t;
+  }));
+}
+/* Shell: blocks opened by then/do/else/in/{/( and closed by fi/done/esac/}/) */
+function fmtBash(code){
+  let level = 0;
+  return joinLines(lf(code).split("\n").map(l => {
+    const t = l.trim(); if(!t) return "";
+    const s = t.replace(/\s#.*$/, "");                           // ignore a trailing comment
+    if(/^(fi|done|esac|else|elif)\b|^[})]/.test(s)) level = Math.max(0, level - 1);
+    const out = SP(level * 2) + t;
+    if(/(\b(then|do|else|in)|[{(])\s*$/.test(s) || /^else\b/.test(s)) level++;
+    return out;
+  }));
+}
+function fmtPlain(code){
+  return joinLines(lf(code).replace(/\t/g, SP(4)).split("\n").map(l => l.replace(/\s+$/, "")));
+}
+LANGS.plain.fmt      = fmtPlain;
+LANGS.csharp.fmt     = c => fmtClike(c, 4, "//");
+LANGS.javascript.fmt = c => fmtClike(c, 2, "//");
+LANGS.css.fmt        = c => fmtClike(c, 2, null);
+LANGS.json.fmt       = fmtJson;
+LANGS.sql.fmt        = fmtSql;
+LANGS.html.fmt       = fmtHtml;
+LANGS.python.fmt     = fmtPython;
+LANGS.bash.fmt       = fmtBash;
+/* the text of a block as the user sees it (pasted code may contain <br>) */
+function preText(pre){
+  const c = pre.cloneNode(true);
+  c.querySelectorAll("br").forEach(b => b.replaceWith("\n"));
+  return c.textContent.replace(/​/g, "");
+}
+
 /* ═══════════════════════════ document ═══════════════════════════ */
 /* db.selected is the highlighted row (may be a folder); openId is the page shown in
    the document panel. Everything that edits the page goes by openId. */
@@ -1167,11 +1344,25 @@ function makeHead(){
   const h = document.createElement("div");
   h.className = "blk";
   h.innerHTML = `<select title="Code language">${LANG_OPTS}</select><span class="grow"></span>` +
+                `<button class="fmt" title="Re-indent the code for its language">Format</button>` +
                 `<button class="x" title="Delete this code block">${TRASH}</button>`;
   h.querySelector("select").onchange = e => {
     if(!h._pre) return;
     h._pre.dataset.lang = e.target.value;
     raw = editor.innerHTML; commit();
+  };
+  h.querySelector(".fmt").onmousedown = e => e.preventDefault();   // keep the editor focused
+  h.querySelector(".fmt").onclick = () => {
+    const pre = h._pre; if(!pre) return;
+    const def = LANGS[pre.dataset.lang] || LANGS.plain;
+    const was = preText(pre);
+    let out;
+    try{ out = def.fmt(was).replace(/\s+$/, "") + "\n"; }
+    catch(e){ toast("Can't format: " + e.message); return; }
+    if(out === was){ toast("Already formatted"); return; }
+    pre.textContent = out;
+    raw = editor.innerHTML; commit();
+    editor.focus(); caretTo(pre);
   };
   h.querySelector(".x").onclick = async () => {
     if(!h._pre) return;
@@ -1543,7 +1734,7 @@ const SEED = [{
 <li>Search matches page titles <em>and</em> page text.</li>
 </ul>
 <h3>Code</h3>
-<p>Pick a language, then use the code block button. Inside a block, Enter makes a new line and <code>Shift+Enter</code> gets you back out to normal text.</p>
+<p>Pick a language, then use the code block button. Inside a block, Enter makes a new line and <code>Shift+Enter</code> gets you back out to normal text. <strong>Format</strong> in the block header re-indents the code for its language.</p>
 <pre class="code" data-lang="csharp">public sealed class Inventory
 {
     private readonly Dictionary&lt;string, int&gt; _slots = new();

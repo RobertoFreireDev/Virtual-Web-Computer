@@ -19,6 +19,7 @@ describe("makeHead()", () => {
     const opts = [...h.querySelectorAll("option")].map(o => [o.value, o.textContent]);
     expect(opts).toEqual(Object.entries(app.get("LANGS")).map(([k, v]) => [k, v.label]));
     expect(h.querySelector("select").title).toBe("Code language");
+    expect(h.querySelector(".fmt").textContent).toBe("Format");
     expect(h.querySelector(".x").title).toBe("Delete this code block");
     expect(h.querySelector(".x svg")).not.toBeNull();
   });
@@ -26,8 +27,63 @@ describe("makeHead()", () => {
   it("ignores events before it is bound to a block", async () => {
     const h = app.call("makeHead");
     expect(() => change(h.querySelector("select"))).not.toThrow();
+    expect(() => click(h.querySelector(".fmt"))).not.toThrow();
     await h.querySelector(".x").onclick();
     expect(app.dialogOpen()).toBe(false);
+  });
+});
+
+describe("format button", () => {
+  const pre = () => editor.querySelector("pre.code");
+  const setCode = (lang, html) => { pre().dataset.lang = lang; pre().innerHTML = html; app.call("syncBlocks"); };
+
+  it("rewrites the block with the language's formatter, saves and puts the caret in the block", () => {
+    app.call("setMode", "edit");
+    setCode("json", '{"a":[1,2]}');
+    click(heads()[0].querySelector(".fmt"));
+    expect(pre().textContent).toBe('{\n  "a": [\n    1,\n    2\n  ]\n}\n');
+    expect(app.call("find", "p3").node.content).toContain('"a": [');
+    expect(app.$("status").textContent).toBe("Saved");
+    expect(pre().contains(app.window.getSelection().anchorNode)).toBe(true);
+  });
+
+  it("uses the block's current language", () => {
+    app.call("setMode", "edit");
+    setCode("sql", "select a from b");
+    click(heads()[0].querySelector(".fmt"));
+    expect(pre().textContent).toBe("SELECT a\nFROM b\n");
+  });
+
+  it("treats <br> in pasted code as line breaks", () => {
+    app.call("setMode", "edit");
+    setCode("python", "def f():<br>\treturn 1");
+    click(heads()[0].querySelector(".fmt"));
+    expect(pre().textContent).toBe("def f():\n    return 1\n");
+    expect(pre().querySelector("br")).toBeNull();
+  });
+
+  it("toasts instead of changing anything when the code cannot be formatted", () => {
+    app.call("setMode", "edit");
+    setCode("json", "{oops");
+    click(heads()[0].querySelector(".fmt"));
+    expect(pre().textContent).toBe("{oops");
+    expect(app.$("toast").textContent).toBe("Can't format: not valid JSON");
+    expect(app.$("status").textContent).not.toBe("Saved");
+  });
+
+  it("says so when the code is already formatted", () => {
+    app.call("setMode", "edit");
+    setCode("plain", "a\nb\n");
+    click(heads()[0].querySelector(".fmt"));
+    expect(app.$("toast").textContent).toBe("Already formatted");
+    expect(pre().textContent).toBe("a\nb\n");
+  });
+
+  it("does not steal focus from the editor on mousedown", () => {
+    app.call("setMode", "edit");
+    const ev = new app.window.MouseEvent("mousedown", { bubbles: true, cancelable: true });
+    heads()[0].querySelector(".fmt").dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
   });
 });
 
