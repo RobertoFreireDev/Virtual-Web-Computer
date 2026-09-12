@@ -32,11 +32,28 @@ describe("clean() — tags", () => {
     expect(clean(html)).toBe(html);
   });
 
-  it("drops disallowed elements but keeps their text", () => {
-    expect(clean("<p>ok</p><script>alert(1)</script>")).toBe("<p>ok</p>alert(1)");
-    expect(clean("<p><iframe src='x'>inner</iframe></p>")).toBe("<p>inner</p>");
+  it("removes script/style-like elements together with their content", () => {
+    expect(clean("<p>ok</p><script>alert(1)</script>")).toBe("<p>ok</p>");
+    expect(clean("<p><iframe src='x'>inner</iframe></p>")).toBe("<p></p>");
+    expect(clean("<style>p{}</style><p>t</p>")).toBe("<p>t</p>");
+    expect(clean("<template><p>x</p></template>")).toBe("");
+  });
+
+  it("unwraps other unknown elements, keeping their (sanitised) content and structure", () => {
     expect(clean("<button>Click</button>")).toBe("Click");
-    expect(clean("<style>p{}</style>")).toBe("p{}");
+    expect(clean("<section><p>a</p><p>b</p></section>")).toBe("<p>a</p><p>b</p>");
+    expect(clean("<article><h2 onclick='x'>t</h2><mark>m</mark></article>")).toBe("<h2>t</h2>m");
+  });
+
+  it("unwraps Google Docs' font-weight:normal <b> wrapper instead of bolding everything", () => {
+    expect(clean('<b style="font-weight:normal" id="docs-internal-guid-1"><p>a <b>real</b></p></b>')).toBe("<p>a <b>real</b></p>");
+    expect(clean('<strong style="font-weight: 400">x</strong>')).toBe("x");
+    expect(clean('<b style="color:red">x</b>')).toBe("<b>x</b>");
+  });
+
+  it("drops HTML comments (Chrome's StartFragment markers)", () => {
+    expect(clean("<!--StartFragment--><p>a</p><!--EndFragment-->")).toBe("<p>a</p>");
+    expect(clean("<p>a<!-- c -->b</p>")).toBe("<p>ab</p>");
   });
 
   it("keeps the OK_TAGS list intact", () => {
@@ -50,7 +67,7 @@ describe("clean() — tags", () => {
   });
 
   it("walks nested content", () => {
-    expect(clean("<div><p><span><script>x</script>y</span></p></div>")).toBe("<div><p><span>xy</span></p></div>");
+    expect(clean("<div><p><span><script>x</script><kbd onclick='z'>k</kbd>y</span></p></div>")).toBe("<div><p><span>ky</span></p></div>");
   });
 
   it("handles empty input", () => {
@@ -73,6 +90,20 @@ describe("clean() — attributes", () => {
     expect(clean('<a href="javascript:alert(1)">x</a>')).toBe("<a>x</a>");
     expect(clean('<a href="  JavaScript:alert(1)">x</a>')).toBe("<a>x</a>");
     expect(clean('<a href="mailto:a@b.c">x</a>')).toBe('<a href="mailto:a@b.c">x</a>');
+  });
+
+  it("removes every href scheme other than http(s)/mailto, keeps relative and anchor links", () => {
+    expect(clean('<a href="data:text/html,x">x</a>')).toBe("<a>x</a>");
+    expect(clean('<a href="vbscript:x">x</a>')).toBe("<a>x</a>");
+    expect(clean('<a href="java\tscript:x">x</a>')).toBe("<a>x</a>");
+    expect(clean('<a href="#top">x</a>')).toBe('<a href="#top">x</a>');
+    expect(clean('<a href="/docs/a.html">x</a>')).toBe('<a href="/docs/a.html">x</a>');
+    expect(clean('<a href="page.html?a=b:c">x</a>')).toBe('<a href="page.html?a=b:c">x</a>');
+  });
+
+  it("normalises unknown data-lang values to plain", () => {
+    expect(clean('<pre data-lang="nope">t</pre>')).toMatch(/^<pre (data-lang="plain" class="code"|class="code" data-lang="plain")>t<\/pre>$/);
+    expect(clean('<pre data-lang="sql">t</pre>')).toContain('data-lang="sql"');
   });
 
   it("only allows http(s) and data:image sources on images", () => {

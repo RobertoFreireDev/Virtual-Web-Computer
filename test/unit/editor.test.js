@@ -124,19 +124,21 @@ describe("Link button", () => {
     expect(editor.querySelector("a").textContent).toBe("https://x.y");
   });
 
-  it("does nothing on cancel or an empty address", async () => {
+  it("does nothing on cancel, an empty address or the untouched https:// placeholder", async () => {
     click(app.$("tbLink"));
     await tick();
     click(dlg().querySelector('[data-a="0"]'));
     await tick();
     expect(editor.querySelector("a")).toBeNull();
 
-    click(app.$("tbLink"));
-    await tick();
-    dlg().querySelector("#lkUrl").value = "   ";
-    click(dlg().querySelector('[data-a="1"]'));
-    await tick();
-    expect(editor.querySelector("a")).toBeNull();
+    for (const v of ["   ", "https://"]) {
+      click(app.$("tbLink"));
+      await tick();
+      dlg().querySelector("#lkUrl").value = v;
+      click(dlg().querySelector('[data-a="1"]'));
+      await tick();
+      expect(editor.querySelector("a")).toBeNull();
+    }
   });
 
   it("Enter in the name field jumps to the address, Enter there submits", async () => {
@@ -156,7 +158,13 @@ describe("paste", () => {
   it("inserts sanitised HTML when the clipboard has HTML", () => {
     const ev = paste(editor, { html: '<p onclick="x">hi <b>b</b></p><script>1</script>', text: "hi b" });
     expect(ev.defaultPrevented).toBe(true);
-    expect(lastExec()).toEqual({ cmd: "insertHTML", val: "<p>hi <b>b</b></p>1" });
+    expect(lastExec()).toEqual({ cmd: "insertHTML", val: "<p>hi <b>b</b></p>" });
+  });
+
+  it("commits plain-text pastes (they do not fire an input event)", () => {
+    caret(editor.querySelector("p").firstChild, 0);
+    paste(editor, { text: "typed" });
+    expect(content()).toContain("typed");
   });
 
   it("inserts plain text when there is no HTML", () => {
@@ -252,6 +260,15 @@ describe("keyboard inside a code block", () => {
     expect(app.exec.calls.filter(c => c.cmd === "indent")).toHaveLength(0);
   });
 
+  it("Enter, Tab and Shift+Enter are committed (they change the DOM without an input event)", () => {
+    key(editor, "Enter");
+    expect(content()).toContain("abc\n");
+    key(editor, "Tab");
+    expect(content()).toContain("abc\n  ");
+    key(editor, "Enter", { shiftKey: true });
+    expect(content()).toContain("</pre><p><br></p>");
+  });
+
   it("Shift+Enter / Ctrl+Enter leave the block into a new paragraph after it", () => {
     for (const mod of [{ shiftKey: true }, { ctrlKey: true }]) {
       caret(pre.firstChild, 3);
@@ -343,6 +360,13 @@ describe("Enter inside a quote", () => {
     caret(editor.querySelector("blockquote").firstChild, 6);
     expect(key(editor, "Enter", { shiftKey: true }).defaultPrevented).toBe(false);
     expect(editor.innerHTML).toBe("<blockquote>quoted</blockquote>");
+  });
+
+  it("is left to the browser inside a list item within the quote (new item, not end of quote)", () => {
+    editor.innerHTML = "<blockquote><ul><li>one</li></ul></blockquote>";
+    caret(editor.querySelector("li").firstChild, 3);
+    expect(key(editor, "Enter").defaultPrevented).toBe(false);
+    expect(editor.innerHTML).toBe("<blockquote><ul><li>one</li></ul></blockquote>");
   });
 });
 

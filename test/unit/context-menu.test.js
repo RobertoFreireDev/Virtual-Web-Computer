@@ -19,6 +19,25 @@ describe("openMenu()", () => {
     expect(app.row("p3").classList.contains("active")).toBe(true);
   });
 
+  it("opens the right-clicked page so the panel matches the highlight, and persists the selection", () => {
+    contextmenu(app.row("p3"));
+    expect(app.get("openId")).toBe("p3");
+    expect(app.$("docTitle").value).toBe("Gamma");
+    app.flush();
+    expect(app.stored().selected).toBe("p3");
+  });
+
+  it("does not interrupt an edit in progress: the edited page stays open", () => {
+    app.call("setMode", "edit");
+    app.$("editor").innerHTML = "<p>editing alpha</p>";
+    contextmenu(app.row("p3"));
+    expect(app.get("mode")).toBe("edit");
+    expect(app.get("openId")).toBe("p1");
+    click(app.$("btnMode"));                                   // Done
+    expect(app.call("find", "p1").node.content).toBe("<p>editing alpha</p>");
+    expect(app.call("find", "p3").node.content).not.toContain("editing alpha");
+  });
+
   it("offers Rename / Duplicate / Delete for a page", () => {
     contextmenu(app.row("p3"));
     expect(items()).toEqual(["Rename", "Duplicate", "Delete"]);

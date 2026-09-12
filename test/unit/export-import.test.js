@@ -64,7 +64,7 @@ describe("normalize()", () => {
   });
   it("sanitises page content", () => {
     const out = normalize([{ name: "P", content: '<p onclick="x">a</p><script>b</script>' }]);
-    expect(out[0].content).toBe("<p>a</p>b");
+    expect(out[0].content).toBe("<p>a</p>");
   });
   it("skips non-objects and tolerates missing input", () => {
     expect(normalize([null, 1, "s", { name: "ok" }])).toHaveLength(1);
@@ -269,7 +269,13 @@ describe("Import button", () => {
     chooseFile(fileInput(), { text: JSON.stringify([{ name: "Evil", content: "<p>ok</p><script>x</script>" }]) });
     await tick(); confirmPick(); await tick();
     click(choiceBtn("merge")); await tick();
-    expect(db().tree[3].content).toBe("<p>ok</p>x");
+    expect(db().tree[3].content).toBe("<p>ok</p>");
+  });
+
+  it("tolerates a file whose JSON is null", async () => {
+    chooseFile(fileInput(), { text: "null" });
+    await tick();
+    expect(app.$("toast").textContent).toBe("No Virtual PC data found in that file");
   });
 
   it("resets the file input so the same file can be chosen again", async () => {

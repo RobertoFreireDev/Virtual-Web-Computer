@@ -28,9 +28,9 @@ Requires Node 18+ (developed on Node 24). No browser is needed.
 | `unit/tree-model.test.js` | `find`, `each`, `contains`, `chainOf`, `target`, `addPage`, `addFolder`, `remove` (confirm dialog), `move` (incl. cycle guard), `duplicate`. |
 | `unit/tree-view.test.js` | `renderTree`/`build`, stats, search (`matches`), row click / twisty / double-click, inline rename (`renameInTree`), drag & drop incl. root drop. |
 | `unit/context-menu.test.js` | Right-click menu items per node type, positioning/clamping, every action, closing on outside click / window blur / Escape. |
-| `unit/sanitize.test.js` | `clean()` tag & attribute whitelist, `javascript:` / `src` filtering, `<pre>` normalisation, `esc()`. |
+| `unit/sanitize.test.js` | `clean()` tag & attribute whitelist, dropped vs. unwrapped elements, comments, Google Docs `<b>` wrapper, `href` scheme / `src` filtering, `<pre>` + `data-lang` normalisation, `esc()` / `attr()`. |
 | `unit/highlight.test.js` | `LANGS` table and `highlight()` for every language (C#, SQL, JS, JSON, HTML, CSS, Python, Shell). |
-| `unit/document.test.js` | `open`, `crumbs`, `render`, `decorate` (copy button), `setMode` (view/edit/source), `format`, `commit`, Edit/Done/HTML buttons, title input & Enter/Tab, `tail`, `caretTo`, click-below-text, autosave debounce. |
+| `unit/document.test.js` | `open` (incl. mid-edit page switch), `crumbs`, `render` (keyed on `openId`), `decorate` (copy button, escaped label), `setMode` (view/edit/source), `format`/`unformat`, `commit`, Edit/Done/HTML buttons, title input & Enter/Tab, `tail`, `caretTo`, click-below-text, autosave debounce. |
 | `unit/editor.test.js` | Toolbar `execCommand` buttons, Code block / Table / Link buttons (with dialog), paste handling, `currentPre`/`insertText`, keyboard inside and outside code blocks. |
 | `unit/code-blocks.test.js` | Floating code-block headers: `makeHead`, `syncBlocks` positioning, language `<select>`, delete button, MutationObserver/rAF scheduling, resize. |
 | `unit/tables.test.js` | Table tools: `#tbl` bar markup, `currentCell`, `syncTable` positioning/visibility and its triggers, every row/column button (header rows are protected: adds go to the body, `− Row` removes the first body row), delete table (confirm), stale-bar guards, `Tab`/`Shift+Tab` between cells and `Tab` past the last cell. |
@@ -69,19 +69,30 @@ page script is reachable this way.
 
 Always `app.close()` in `afterEach` — it restores real timers and closes the window.
 
-## Known bugs documented with `it.fails`
+## Documenting a known bug
 
-These tests assert the *correct* behaviour and are marked `it.fails`, so the
-suite stays green while the bug exists. When a bug is fixed the test will start
-failing (because it now passes) — remove the `.fails` at that point.
+If a bug is found but not fixed yet, write the test that asserts the *correct*
+behaviour and mark it `it.fails`, so the suite stays green while the bug exists.
+When the bug is fixed the test starts failing (because it now passes) — flip it
+back to `it` at that point. There are currently no `it.fails` tests.
 
-1. **Switching pages while editing shows the old page's body**
-   (`document.test.js`). `open()` sets `raw` to the new page, then
-   `setMode("view")` overwrites `raw` with `editor.innerHTML` from the previous
-   page. The pending autosave then writes that body into the newly opened page.
-2. **`esc()` does not escape `"`** but is used inside `value="…"` attributes in
-   `promptBox` and `linkBox` (`dialogs.test.js`). Selecting `say "hi"` and pressing
-   *Link* prefills the name as `say `.
+Regressions that the suite now guards against (each has a dedicated test):
+
+- `open()` while editing flushes the editor into the page it belongs to before
+  loading the new one (`document.test.js`).
+- `commit()`, the title input and `Ctrl+E` act on the *open* page (`openId`),
+  not on the highlighted row (`db.selected`), which may be a folder or a
+  right-clicked page (`document.test.js`, `sidebar-shortcuts.test.js`,
+  `context-menu.test.js`).
+- `beforeunload` writes to `localStorage` synchronously via `flush()`
+  (`sidebar-shortcuts.test.js`).
+- A round trip through the HTML view (`format()` → `unformat()`) is lossless
+  (`document.test.js`).
+- Dialog prefills go through `attr()`, which also escapes `"`
+  (`dialogs.test.js`).
+- `clean()` drops `<script>`/`<style>`-like elements, unwraps other unknown
+  elements, strips comments and Google Docs' `font-weight:normal` `<b>` wrapper,
+  and only keeps `http(s):`/`mailto:`/scheme-less hrefs (`sanitize.test.js`).
 
 ## JSDOM limitations to keep in mind
 

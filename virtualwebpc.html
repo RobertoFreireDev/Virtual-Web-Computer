@@ -226,7 +226,7 @@ body.nav-closed aside,body.nav-closed .grip{display:none}
 .body pre.code{
   margin:1.4em 0;padding:14px 16px;border:1px solid var(--line);border-radius:8px;
   background:#0b0e12;color:#c3ccd6;font:12.9px/1.65 var(--mono);
-  white-space:pre-wrap;overflow-x:auto;width:min(100%,none);tab-size:2;
+  white-space:pre-wrap;overflow-x:auto;tab-size:2;
 }
 .code-wrap{margin:1.4em 0;position:relative}
 .code-wrap pre.code{margin:0}
@@ -471,10 +471,13 @@ function load(){
 let saveTimer=null;
 function save(){
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(()=>{
-    try{ localStorage.setItem(KEY, JSON.stringify(db)); }
-    catch(e){ memoryOnly = true; }
-  }, 250);
+  saveTimer = setTimeout(flush, 250);
+}
+/* write now — the debounce can't fire once the page is unloading */
+function flush(){
+  clearTimeout(saveTimer); saveTimer = null;
+  try{ localStorage.setItem(KEY, JSON.stringify(db)); }
+  catch(e){ memoryOnly = true; }
 }
 function flag(text){
   statusEl.textContent = text; statusEl.classList.add("on");
@@ -684,7 +687,8 @@ function renameInTree(id){
 
 /* ═══════════════════════════ context menu ═══════════════════════════ */
 function openMenu(x, y, n){
-  db.selected = n.id; renderTree();
+  db.selected = n.id; save(); renderTree();
+  if(n.type === "page" && n.id !== openId && mode === "view") open(n.id);   // keep the panel in step with the highlight
   const items = [];
   if(n.type === "folder"){
     items.push(["New page here", () => addPage()], ["New folder here", () => addFolder()], ["-"]);
@@ -720,23 +724,34 @@ function duplicate(id){
 /* ═══════════════════════════ sanitizing ═══════════════════════════ */
 const OK_TAGS = new Set(["P","DIV","SPAN","BR","HR","H1","H2","H3","H4","H5","H6","UL","OL","LI","STRONG","B","EM","I","U","S","STRIKE","CODE","PRE","BLOCKQUOTE","A","TABLE","THEAD","TBODY","TR","TH","TD","IMG","SUB","SUP","FONT"]);
 const OK_ATTR = new Set(["href","title","alt","src","colspan","rowspan","data-lang"]);
+/* elements whose content is code/markup rather than text: removed together with their content */
+const DROP_TAGS = new Set(["SCRIPT","STYLE","TEMPLATE","NOSCRIPT","IFRAME","OBJECT","EMBED","SVG","MATH","HEAD","META","LINK","TITLE"]);
+/* links may be scheme-less (relative, #anchor) or http(s) / mailto — never javascript:, data:, vbscript: … */
+function okHref(v){
+  const m = /^\s*([a-z][a-z0-9+.\-]*):/i.exec(v.replace(/[\t\n\r]/g, ""));   // browsers ignore tabs/newlines in URLs
+  return !m || /^(https?|mailto)$/i.test(m[1]);
+}
 function clean(html){
   const doc = new DOMParser().parseFromString("<div id='r'>" + html + "</div>", "text/html");
   const root = doc.getElementById("r");
+  const unwrap = el => { walk(el); el.replaceWith(...el.childNodes); };
   const walk = el => {
+    [...el.childNodes].forEach(c => { if(c.nodeType === 8) c.remove(); });   // comments (<!--StartFragment-->)
     [...el.children].forEach(child => {
-      if(!OK_TAGS.has(child.tagName)){
-        const txt = doc.createTextNode(child.textContent);
-        child.replaceWith(txt); return;
+      if(DROP_TAGS.has(child.tagName)){ child.remove(); return; }
+      /* unknown wrappers (section, article, font-weight:normal <b> from Google Docs …) keep their content */
+      if(!OK_TAGS.has(child.tagName) ||
+         (/^(B|STRONG)$/.test(child.tagName) && /font-weight\s*:\s*(normal|[1-4]00)\b/i.test(child.getAttribute("style") || ""))){
+        unwrap(child); return;
       }
       [...child.attributes].forEach(a => {
         const n = a.name.toLowerCase();
         if(n === "class"){ if(child.tagName === "PRE") child.setAttribute("class","code"); else child.removeAttribute("class"); return; }
         if(!OK_ATTR.has(n)) child.removeAttribute(a.name);
-        else if(n === "href" && /^\s*javascript:/i.test(a.value)) child.removeAttribute("href");
+        else if(n === "href" && !okHref(a.value)) child.removeAttribute("href");
         else if(n === "src" && !/^(https?:|data:image\/)/i.test(a.value)) child.removeAttribute("src");
       });
-      if(child.tagName === "PRE"){ child.className = "code"; if(!child.dataset.lang) child.dataset.lang = "plain"; }
+      if(child.tagName === "PRE"){ child.className = "code"; if(!LANGS[child.dataset.lang]) child.dataset.lang = "plain"; }
       walk(child);
     });
   };
@@ -772,7 +787,10 @@ function highlight(code, lang){
 }
 
 /* ═══════════════════════════ document ═══════════════════════════ */
-let openId = null;                            // page currently loaded in the editor
+/* db.selected is the highlighted row (may be a folder); openId is the page shown in
+   the document panel. Everything that edits the page goes by openId. */
+let openId = null;
+const openPage = () => { const f = openId && find(openId); return f && f.node.type === "page" ? f : null; };
 function open(id){
   const f = find(id); if(!f || f.node.type !== "page") return;
   if(mode !== "view"){
@@ -781,7 +799,7 @@ function open(id){
     clearTimeout(typeTimer);
     const prev = openId && find(openId);
     if(prev && prev.node.type === "page"){
-      prev.node.content = mode === "edit" ? editor.innerHTML : source.value;
+      prev.node.content = mode === "edit" ? editor.innerHTML : unformat(source.value);
       save();
     }
     mode = "view";                            // so setMode() doesn't copy the old page into raw
@@ -793,17 +811,18 @@ function open(id){
   render();
 }
 function crumbs(){
-  const f = db.selected && find(db.selected);
-  if(!f){ $("crumbs").textContent = ""; return; }
-  const path = chainOf(db.selected).map(n => n.name);
+  if(!openPage()){ $("crumbs").textContent = ""; return; }
+  const path = chainOf(openId).map(n => n.name);
   $("crumbs").textContent = path.length ? path.join("  /  ") + "  /" : "";
 }
 function render(){
-  const f = db.selected && find(db.selected);
-  const has = f && f.node.type === "page";
+  const has = !!openPage();
   docEl.style.display = has ? "flex" : "none";
   emptyEl.style.display = has ? "none" : "flex";
-  if(!has) return;
+  if(!has){
+    if(mode !== "view"){ mode = "view"; setMode("view"); }   // the page being edited is gone
+    return;
+  }
   crumbs();
   viewer.innerHTML = clean(raw);
   decorate(viewer);
@@ -817,11 +836,12 @@ function decorate(root){
     wrap.className = "code-wrap";
     const bar = document.createElement("div");
     bar.className = "code-bar";
-    bar.innerHTML = `<span>${(LANGS[lang]||{}).label || lang}</span>`;
+    bar.innerHTML = `<span>${esc((LANGS[lang]||{}).label || lang)}</span>`;
     const copy = document.createElement("button");
     copy.textContent = "Copy";
     copy.onclick = () => {
-      navigator.clipboard?.writeText(code).then(() => { copy.textContent = "Copied"; setTimeout(() => copy.textContent = "Copy", 1400); })
+      if(!navigator.clipboard){ toast("Clipboard blocked by the browser"); return; }
+      navigator.clipboard.writeText(code).then(() => { copy.textContent = "Copied"; setTimeout(() => copy.textContent = "Copy", 1400); })
         .catch(() => toast("Clipboard blocked by the browser"));
     };
     bar.appendChild(copy);
@@ -830,16 +850,15 @@ function decorate(root){
   });
 }
 function commit(){
-  const f = db.selected && find(db.selected);
-  if(!f || f.node.type !== "page") return;
+  const f = openPage(); if(!f) return;
   if(mode === "edit") raw = editor.innerHTML;
-  if(mode === "source") raw = source.value;
+  if(mode === "source") raw = unformat(source.value);
   f.node.content = raw;
   save(); flag("Saved");
 }
 function setMode(m){
   if(mode === "edit" && m !== "edit") raw = editor.innerHTML;
-  if(mode === "source" && m !== "source") raw = source.value;
+  if(mode === "source" && m !== "source") raw = unformat(source.value);
   mode = m;
   viewer.style.display = m === "view" ? "" : "none";
   editor.style.display = m === "edit" ? "" : "none";
@@ -861,8 +880,14 @@ function setMode(m){
   if(m === "view") render();
   syncBlocks();
 }
+/* source view: one tag per line. unformat() undoes exactly that, so a round trip
+   through the HTML view never adds whitespace (which would show up inside
+   white-space:pre-wrap blocks such as quotes and list items) */
 function format(html){
   return html.replace(/></g, ">\n<");
+}
+function unformat(html){
+  return html.replace(/>\n</g, "><");
 }
 $("btnMode").onclick = () => { if(mode === "view") setMode("edit"); else { commit(); setMode("view"); } };
 $("btnSource").onclick = () => { if(mode === "source"){ commit(); setMode("edit"); } else setMode("source"); };
@@ -871,9 +896,9 @@ $("btnPage").onclick = addPage;
 $("btnFolder").onclick = addFolder;
 
 titleEl.addEventListener("input", () => {
-  const f = db.selected && find(db.selected); if(!f) return;
+  const f = openPage(); if(!f) return;
   f.node.name = titleEl.value.trim() || "Untitled page";
-  save(); renderTree();
+  save(); renderTree(); crumbs();
 });
 
 function caretTo(el, atEnd = true){
@@ -912,7 +937,7 @@ editor.addEventListener("input", () => {
 });
 source.addEventListener("input", () => {
   clearTimeout(typeTimer);
-  typeTimer = setTimeout(() => { raw = source.value; commit(); }, 500);
+  typeTimer = setTimeout(() => { raw = unformat(source.value); commit(); }, 500);
 });
 
 /* paste as clean html (or plain text inside code blocks) */
@@ -923,6 +948,7 @@ editor.addEventListener("paste", e => {
   const text = e.clipboardData.getData("text/plain");
   if(inPre || !html) insertText(text);
   else document.execCommand("insertHTML", false, clean(html));
+  raw = editor.innerHTML; commit();           // insertText() changes the DOM without an input event
 });
 
 /* ═══════════════════════════ editor commands ═══════════════════════════ */
@@ -989,17 +1015,17 @@ editor.addEventListener("keydown", e => {
       const nr = document.createRange();
       nr.setStartAfter(nl); nr.collapse(true);
       s.removeAllRanges(); s.addRange(nr);
-      raw = editor.innerHTML;
+      raw = editor.innerHTML; commit();
       return;
     }
-    if(e.key === "Tab"){ e.preventDefault(); insertText("  "); return; }
+    if(e.key === "Tab"){ e.preventDefault(); insertText("  "); raw = editor.innerHTML; commit(); return; }
     if(e.key === "Enter" && (e.ctrlKey || e.shiftKey)){   // escape the block
       e.preventDefault();
       const p = document.createElement("p"); p.innerHTML = "<br>";
       pre.parentNode.insertBefore(p, pre.nextSibling);
       const r = document.createRange(); r.setStart(p, 0); r.collapse(true);
       const s = getSelection(); s.removeAllRanges(); s.addRange(r);
-      raw = editor.innerHTML;
+      raw = editor.innerHTML; commit();
       return;
     }
   }
@@ -1049,7 +1075,9 @@ function currentQuote(){
   let n = s.getRangeAt(0).startContainer;
   n = n.nodeType === 3 ? n.parentNode : n;
   const q = n && n.closest ? n.closest("blockquote") : null;
-  return q && editor.contains(q) ? q : null;
+  if(!q || !editor.contains(q)) return null;
+  const li = n.closest("li");                 // inside a list the browser's Enter (new item) is the right thing
+  return li && q.contains(li) ? null : q;
 }
 /* move everything after the caret out of the quote into a paragraph placed after it */
 function splitQuote(q){
@@ -1262,7 +1290,7 @@ $("file").onchange = async e => {
   let data;
   try{ data = JSON.parse(await file.text()); }
   catch(err){ toast("That file isn't valid JSON"); return; }
-  const tree = Array.isArray(data) ? data : data.tree;
+  const tree = Array.isArray(data) ? data : data && data.tree;
   if(!Array.isArray(tree)){ toast("No Virtual PC data found in that file"); return; }
   const all = normalize(tree);
   if(!all.length){ toast("That backup is empty"); return; }
@@ -1343,7 +1371,7 @@ function linkBox(name = ""){
     const nameIn = dialog.querySelector("#lkName"), urlIn = dialog.querySelector("#lkUrl");
     const done = ok => {
       const url = urlIn.value.trim(); closeDialog();
-      res(ok && url ? { url, name:nameIn.value.trim() } : null);
+      res(ok && url && url !== "https://" ? { url, name:nameIn.value.trim() } : null);   // untouched placeholder = no link
     };
     dialog.querySelector('[data-a="1"]').onclick = () => done(true);
     dialog.querySelector('[data-a="0"]').onclick = () => done(false);
@@ -1456,11 +1484,11 @@ addEventListener("keydown", e => {
   if(!mod) return;
   const k = e.key.toLowerCase();
   if(k === "s"){ e.preventDefault(); commit(); if(mode !== "view") setMode("view"); }
-  else if(k === "e"){ e.preventDefault(); if(db.selected) setMode(mode === "view" ? "edit" : "view"); }
+  else if(k === "e"){ e.preventDefault(); if(openPage()){ if(mode !== "view") commit(); setMode(mode === "view" ? "edit" : "view"); } }
   else if(k === "\\"){ e.preventDefault(); toggleNav(); }
   else if(k === "f" && !e.shiftKey){ e.preventDefault(); if(!db.navOpen) toggleNav(); $("search").focus(); }
 });
-addEventListener("beforeunload", () => { if(mode !== "view") commit(); });
+addEventListener("beforeunload", () => { if(mode !== "view") commit(); flush(); });
 
 /* ═══════════════════════════ first run ═══════════════════════════ */
 const SEED = [{

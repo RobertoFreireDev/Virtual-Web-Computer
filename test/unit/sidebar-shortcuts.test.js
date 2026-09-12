@@ -114,10 +114,28 @@ describe("keyboard shortcuts", () => {
     expect(app.get("mode")).toBe("view");
   });
 
-  it("Ctrl+E does nothing without a selection", () => {
-    db().selected = null;
+  it("Ctrl+E does nothing when no page is open", () => {
+    app.set("openId", null);
     key(body(), "e", { ctrlKey: true });
     expect(app.get("mode")).toBe("view");
+  });
+
+  it("Ctrl+E still edits the open page when the highlighted row is a folder", () => {
+    db().selected = "f1";
+    key(body(), "e", { ctrlKey: true });
+    expect(app.get("mode")).toBe("edit");
+    app.$("editor").innerHTML = "<p>folder highlighted</p>";
+    key(body(), "e", { ctrlKey: true });
+    expect(app.call("find", "p1").node.content).toBe("<p>folder highlighted</p>");
+    expect(app.call("find", "f1").node.content).toBeUndefined();
+  });
+
+  it("Ctrl+E leaving edit mode commits, even for changes that fired no input event", () => {
+    key(body(), "e", { ctrlKey: true });
+    app.$("editor").innerHTML = "<p>via ctrl+e</p>";
+    key(body(), "e", { ctrlKey: true });
+    expect(app.get("mode")).toBe("view");
+    expect(app.call("find", "p1").node.content).toBe("<p>via ctrl+e</p>");
   });
 
   it("Ctrl+\\ toggles the sidebar", () => {
@@ -172,8 +190,18 @@ describe("beforeunload", () => {
     expect(app.call("find", "p1").node.content).toBe("<p>bye</p>");
   });
 
-  it("does nothing in view mode", () => {
+  it("writes to localStorage synchronously (the save debounce cannot fire after unload)", () => {
+    app.call("setMode", "edit");
+    app.$("editor").innerHTML = "<p>bye</p>";
+    W().dispatchEvent(new (W().Event)("beforeunload"));
+    expect(app.stored().tree[0].children[0].content).toBe("<p>bye</p>");   // no app.flush()
+  });
+
+  it("flushes a pending debounced save in view mode", () => {
+    app.call("find", "p1").node.name = "Renamed";
+    app.call("save");
     W().dispatchEvent(new (W().Event)("beforeunload"));
     expect(app.$("status").textContent).toBe("");
+    expect(app.stored().tree[0].children[0].name).toBe("Renamed");
   });
 });

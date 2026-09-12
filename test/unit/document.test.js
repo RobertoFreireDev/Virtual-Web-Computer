@@ -55,25 +55,32 @@ describe("crumbs()", () => {
   it("is empty for root pages and when nothing is selected", () => {
     db().selected = "p3"; app.call("open", "p3");
     expect(app.$("crumbs").textContent).toBe("");
-    db().selected = null; app.call("crumbs");
+    app.set("openId", null); app.call("crumbs");
     expect(app.$("crumbs").textContent).toBe("");
   });
 });
 
 describe("render()", () => {
-  it("shows the document for a selected page and the empty state otherwise", () => {
+  it("shows the document while a page is open and the empty state otherwise", () => {
     expect(app.$("doc").style.display).toBe("flex");
-    db().selected = "f1"; app.call("render");
+    db().selected = "f1"; app.call("render");             // highlighting a folder keeps the open page visible
+    expect(app.$("doc").style.display).toBe("flex");
+    app.set("openId", null); app.call("render");
     expect(app.$("doc").style.display).toBe("none");
     expect(app.$("empty").style.display).toBe("flex");
-    db().selected = null; app.call("render");
-    expect(app.$("empty").style.display).toBe("flex");
+  });
+
+  it("leaves edit mode when the open page disappears", () => {
+    app.call("setMode", "edit");
+    app.set("openId", "gone"); app.call("render");
+    expect(app.get("mode")).toBe("view");
+    expect(app.$("toolbar").style.display).toBe("none");
   });
 
   it("sanitises the content before showing it", () => {
     app.set("raw", '<p onclick="x">a</p><script>b</script>');
     app.call("render");
-    expect(app.$("viewer").innerHTML).toBe("<p>a</p>b");
+    expect(app.$("viewer").innerHTML).toBe("<p>a</p>");
   });
 
   it("decorates code blocks with a language bar and copy button", () => {
@@ -108,11 +115,20 @@ describe("decorate()", () => {
     expect(btn.textContent).toBe("Copy");
   });
 
-  it("falls back to the raw lang name when it is unknown, and strips zero-width spaces", () => {
-    app.set("raw", '<pre class="code" data-lang="weird">a​b</pre>');
+  it("treats an unknown lang as plain text (no markup from data-lang), and strips zero-width spaces", () => {
+    app.set("raw", '<pre class="code" data-lang="<img src=x onerror=alert(1)>">a​b</pre>');
     app.call("render");
-    expect(app.q("#viewer .code-bar span").textContent).toBe("weird");
+    expect(app.q("#viewer .code-bar span").textContent).toBe("Plain text");
+    expect(app.q("#viewer .code-bar img")).toBeNull();
     expect(app.q("#viewer pre.code").textContent).toBe("ab");
+  });
+
+  it("escapes the label even when decorate() is given an unknown lang directly", () => {
+    const root = app.window.document.createElement("div");
+    root.innerHTML = '<pre class="code" data-lang="<b>x</b>">c</pre>';
+    app.call("decorate", root);
+    expect(root.querySelector(".code-bar span").textContent).toBe("<b>x</b>");
+    expect(root.querySelector(".code-bar b")).toBeNull();
   });
 
   it("labels plain blocks 'Plain text'", () => {
@@ -216,6 +232,15 @@ describe("format()", () => {
   it("leaves text alone", () => {
     expect(app.call("format", "plain > text")).toBe("plain > text");
   });
+  it("unformat() undoes it, so opening the HTML view does not add whitespace to pre-wrap blocks", () => {
+    const html = "<blockquote><p>a</p><p>b</p></blockquote><p><b>x</b><i>y</i></p>";
+    expect(app.call("unformat", app.call("format", html))).toBe(html);
+    app.set("raw", html);
+    app.call("setMode", "source");
+    click(app.$("btnMode"));                       // Done: commit + back to view
+    expect(app.get("raw")).toBe(html);
+    expect(app.call("find", "p1").node.content).toBe(html);
+  });
 });
 
 describe("commit()", () => {
@@ -243,10 +268,21 @@ describe("commit()", () => {
     expect(app.call("find", "p1").node.content).toBe("<p>raw</p>");
   });
 
-  it("does nothing when a folder or nothing is selected", () => {
+  it("writes to the open page even when the highlighted row is a folder or another page", () => {
+    app.call("setMode", "edit");
+    app.$("editor").innerHTML = "<p>still alpha</p>";
     db().selected = "f1";
     app.call("commit");
     expect(app.call("find", "f1").node.content).toBeUndefined();
+    expect(app.call("find", "p1").node.content).toBe("<p>still alpha</p>");
+    db().selected = "p3";
+    app.call("commit");
+    expect(app.call("find", "p3").node.content).not.toContain("still alpha");
+  });
+
+  it("does nothing when no page is open", () => {
+    app.set("openId", null);
+    app.call("commit");
     expect(app.$("status").textContent).toBe("");
     db().selected = null;
     expect(() => app.call("commit")).not.toThrow();
