@@ -915,10 +915,10 @@ langSel.onchange = () => { const pre = currentPre(); if(pre){ pre.dataset.lang =
 $("tbLink").onmousedown = e => e.preventDefault();
 $("tbLink").onclick = async () => {
   const sel = getSelection().toString();
-  const url = await promptBox("Add link", "Address", "https://");
-  if(!url) return;
+  const res = await linkBox(sel);
+  if(!res) return;
   editor.focus();
-  document.execCommand("insertHTML", false, `<a href="${esc(url)}">${esc(sel || url)}</a>`);
+  document.execCommand("insertHTML", false, `<a href="${esc(res.url)}">${esc(res.name || res.url)}</a>`);
   raw = editor.innerHTML; commit();
 };
 $("tbTable").onmousedown = e => e.preventDefault();
@@ -1084,6 +1084,24 @@ function promptBox(title, label, value = ""){
     dialog.querySelector('[data-a="1"]').onclick = () => done(true);
     dialog.querySelector('[data-a="0"]').onclick = () => done(false);
     input.onkeydown = e => { if(e.key === "Enter") done(true); };
+    veil._esc = () => done(false);
+  });
+}
+function linkBox(name = ""){
+  return new Promise(res => {
+    openDialog(`<h3>Add link</h3><p>Name</p><input id="lkName" value="${esc(name)}" placeholder="Link text">
+      <p>Address</p><input id="lkUrl" value="https://">
+      <div class="acts"><button class="btn ghost" data-a="0">Cancel</button>
+      <button class="btn primary" data-a="1">Add</button></div>`, name ? "#lkUrl" : "#lkName");
+    const nameIn = dialog.querySelector("#lkName"), urlIn = dialog.querySelector("#lkUrl");
+    const done = ok => {
+      const url = urlIn.value.trim(); closeDialog();
+      res(ok && url ? { url, name:nameIn.value.trim() } : null);
+    };
+    dialog.querySelector('[data-a="1"]').onclick = () => done(true);
+    dialog.querySelector('[data-a="0"]').onclick = () => done(false);
+    nameIn.onkeydown = e => { if(e.key === "Enter"){ e.preventDefault(); urlIn.focus(); urlIn.select(); } };
+    urlIn.onkeydown = e => { if(e.key === "Enter") done(true); };
     veil._esc = () => done(false);
   });
 }
