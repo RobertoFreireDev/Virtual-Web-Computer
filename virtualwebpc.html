@@ -716,6 +716,8 @@ function clean(html){
   return root.innerHTML;
 }
 function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+/* for text placed inside a double-quoted attribute (value="…", href="…") */
+function attr(s){ return esc(s).replace(/"/g,"&quot;"); }
 
 /* ═══════════════════════════ syntax highlighting ═══════════════════════════ */
 const LANGS = {
@@ -742,8 +744,21 @@ function highlight(code, lang){
 }
 
 /* ═══════════════════════════ document ═══════════════════════════ */
+let openId = null;                            // page currently loaded in the editor
 function open(id){
   const f = find(id); if(!f || f.node.type !== "page") return;
+  if(mode !== "view"){
+    /* switching pages mid-edit: flush the unsaved text to the page it belongs to
+       (db.selected already points at the new one, so commit() can't be used) */
+    clearTimeout(typeTimer);
+    const prev = openId && find(openId);
+    if(prev && prev.node.type === "page"){
+      prev.node.content = mode === "edit" ? editor.innerHTML : source.value;
+      save();
+    }
+    mode = "view";                            // so setMode() doesn't copy the old page into raw
+  }
+  openId = id;
   raw = f.node.content || "";
   titleEl.value = f.node.name;
   setMode("view");
@@ -920,7 +935,7 @@ $("tbLink").onclick = async () => {
   const res = await linkBox(sel);
   if(!res) return;
   editor.focus();
-  document.execCommand("insertHTML", false, `<a href="${esc(res.url)}">${esc(res.name || res.url)}</a>`);
+  document.execCommand("insertHTML", false, `<a href="${attr(res.url)}">${esc(res.name || res.url)}</a>`);
   raw = editor.innerHTML; commit();
 };
 $("tbTable").onmousedown = e => e.preventDefault();
@@ -1098,7 +1113,7 @@ function confirmBox(title, msg, label = "OK"){
 }
 function promptBox(title, label, value = ""){
   return new Promise(res => {
-    openDialog(`<h3>${esc(title)}</h3><p>${esc(label)}</p><input value="${esc(value)}">
+    openDialog(`<h3>${esc(title)}</h3><p>${esc(label)}</p><input value="${attr(value)}">
       <div class="acts"><button class="btn ghost" data-a="0">Cancel</button>
       <button class="btn primary" data-a="1">Add</button></div>`, "input");
     const input = dialog.querySelector("input");
@@ -1111,7 +1126,7 @@ function promptBox(title, label, value = ""){
 }
 function linkBox(name = ""){
   return new Promise(res => {
-    openDialog(`<h3>Add link</h3><p>Name</p><input id="lkName" value="${esc(name)}" placeholder="Link text">
+    openDialog(`<h3>Add link</h3><p>Name</p><input id="lkName" value="${attr(name)}" placeholder="Link text">
       <p>Address</p><input id="lkUrl" value="https://">
       <div class="acts"><button class="btn ghost" data-a="0">Cancel</button>
       <button class="btn primary" data-a="1">Add</button></div>`, name ? "#lkUrl" : "#lkName");

@@ -104,10 +104,7 @@ describe("promptBox()", () => {
     expect(dialog.querySelector("b")).toBeNull();
   });
 
-  /* KNOWN BUG — esc() does not escape double quotes, but its output is used
-     inside value="…" attributes (promptBox, linkBox). A value containing a quote
-     is cut off at the first quote. (promptBox itself is currently unused by the UI.) */
-  it.fails("keeps double quotes in the initial value (BUG)", () => {
+  it("keeps double quotes in the initial value", () => {
     app.call("promptBox", "T", "L", 'say "hi"');
     expect(dialog.querySelector("input").value).toBe('say "hi"');
   });
@@ -126,9 +123,7 @@ describe("linkBox()", () => {
     expect(dialog.querySelector("#lkName").value).toBe("selected words");
   });
 
-  /* KNOWN BUG — same quote-escaping issue as promptBox: selecting `say "hi"`
-     and pressing Link prefills the name as `say ` */
-  it.fails("keeps double quotes in the prefilled name (BUG)", () => {
+  it("keeps double quotes in the prefilled name", () => {
     app.call("linkBox", 'say "hi"');
     expect(dialog.querySelector("#lkName").value).toBe('say "hi"');
   });

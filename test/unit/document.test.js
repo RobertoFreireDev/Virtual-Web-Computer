@@ -17,18 +17,16 @@ describe("open()", () => {
     expect(app.$("viewer").querySelector("h2").textContent).toBe("Gamma");
   });
 
-  /* KNOWN BUG — documented with it.fails so the suite stays green until it is fixed.
-     open() sets `raw` to the new page and then calls setMode("view"); leaving edit
-     mode copies editor.innerHTML (the OLD page) back into `raw`, so the new page is
-     shown with the old page's body, and the pending autosave writes that body into
-     the new page. Switching pages while editing should show the new page's content. */
-  it.fails("shows the new page's content when opened while editing another page (BUG)", () => {
+  it("shows the new page's content when opened while editing another page", () => {
     app.call("setMode", "edit");
     app.$("editor").innerHTML = "<p>unsaved alpha edit</p>";
     click(app.row("p3"));
     expect(app.get("mode")).toBe("view");
     expect(app.$("viewer").innerHTML).toContain("Gamma");
     expect(app.get("raw")).toBe(app.call("find", "p3").node.content);
+    // the unsaved text lands on the page it was typed into, not the new one
+    expect(app.call("find", "p1").node.content).toBe("<p>unsaved alpha edit</p>");
+    expect(app.call("find", "p3").node.content).not.toContain("unsaved");
   });
 
   it("ignores folders and unknown ids", () => {
