@@ -375,14 +375,11 @@ body.nav-closed aside,body.nav-closed .grip{display:none}
         <button data-cmd="insertOrderedList" title="Numbered list">1.</button>
         <button data-cmd="formatBlock" data-val="blockquote" title="Quote">&ldquo;</button>
         <div class="tb-sep"></div>
-        <button id="tbCode" title="Inline code">&lt;/&gt;</button>
-        <select class="lang" id="lang" title="Code language"></select>
         <button id="tbBlock" title="Insert code block">Code block</button>
         <div class="tb-sep"></div>
         <button id="tbLink" title="Link">Link</button>
         <button id="tbTable" title="Insert table">Table</button>
         <button data-cmd="insertHorizontalRule" title="Divider">&#8212;</button>
-        <button data-cmd="removeFormat" title="Clear formatting">Clear</button>
         <span class="tb-hint">Ctrl+S saves &amp; closes editing</span>
       </div>
 
@@ -416,7 +413,7 @@ let memoryOnly = false;     // set when localStorage is unavailable
 const $ = id => document.getElementById(id);
 const treeEl=$("tree"), viewer=$("viewer"), editor=$("editor"), source=$("source"),
       docEl=$("doc"), emptyEl=$("empty"), titleEl=$("docTitle"), statusEl=$("status"),
-      toolbar=$("toolbar"), langSel=$("lang"), menuEl=$("menu"), veil=$("veil"), dialog=$("dialog");
+      toolbar=$("toolbar"), menuEl=$("menu"), veil=$("veil"), dialog=$("dialog");
 
 /* ═══════════════════════════ storage ═══════════════════════════ */
 function load(){
@@ -726,7 +723,6 @@ function highlight(code, lang){
     return a[0];
   });
 }
-Object.entries(LANGS).forEach(([k, v]) => langSel.insertAdjacentHTML("beforeend", `<option value="${k}">${v.label}</option>`));
 
 /* ═══════════════════════════ document ═══════════════════════════ */
 function open(id){
@@ -892,26 +888,15 @@ function insertText(t){
   r.insertNode(node); r.setStartAfter(node); r.collapse(true);
   s.removeAllRanges(); s.addRange(r);
 }
-$("tbCode").onmousedown = e => e.preventDefault();
-$("tbCode").onclick = () => {
-  editor.focus();
-  const s = getSelection();
-  const txt = s.toString();
-  document.execCommand("insertHTML", false, txt ? `<code>${esc(txt)}</code>&nbsp;` : "<code>code</code>&nbsp;");
-  raw = editor.innerHTML; commit();
-};
 $("tbBlock").onmousedown = e => e.preventDefault();
 $("tbBlock").onclick = () => {
   editor.focus();
-  const lang = langSel.value;
-  const pre = currentPre();
-  if(pre){ pre.dataset.lang = lang; raw = editor.innerHTML; commit(); flag("Language set"); return; }
+  if(currentPre()) return;                   // already inside a block
   const sel = getSelection().toString();
   document.execCommand("insertHTML", false,
-    `<pre class="code" data-lang="${lang}">${esc(sel || "// code")}\n</pre><p><br></p>`);
+    `<pre class="code" data-lang="plain">${esc(sel || "// code")}\n</pre><p><br></p>`);
   raw = editor.innerHTML; commit();
 };
-langSel.onchange = () => { const pre = currentPre(); if(pre){ pre.dataset.lang = langSel.value; raw = editor.innerHTML; commit(); } };
 $("tbLink").onmousedown = e => e.preventDefault();
 $("tbLink").onclick = async () => {
   const sel = getSelection().toString();
