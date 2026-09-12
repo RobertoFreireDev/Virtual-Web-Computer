@@ -198,6 +198,30 @@ describe("remove()", () => {
     await p;
   });
 
+  it("lists every nested folder and page, indented by depth", async () => {
+    const p = app.call("remove", "f1");
+    await tick();
+    const rows = [...app.qa("#dialog .pick-tree .pick-row")];
+    expect(rows.map(r => r.querySelector(".label").textContent)).toEqual(["Alpha", "Nested", "Beta"]);
+    expect(rows.map(r => parseInt(r.style.paddingLeft))).toEqual([6, 6, 24]);
+    expect(rows.map(r => !!r.querySelector(".gl svg"))).toEqual([true, true, true]);
+    expect(app.q("#dialog .pick-tree input")).toBeNull();      // read-only list, no checkboxes
+    click(app.q('#dialog [data-a="0"]'));
+    await p;
+  });
+
+  it("shows no list for a page or an empty folder", async () => {
+    let p = app.call("remove", "p3");
+    await tick();
+    expect(app.q("#dialog .pick-tree")).toBeNull();
+    click(app.q('#dialog [data-a="0"]')); await p;
+    p = app.call("remove", "f3");
+    await tick();
+    expect(app.q("#dialog p").textContent).toBe("“Empty” will be removed.");
+    expect(app.q("#dialog .pick-tree")).toBeNull();
+    click(app.q('#dialog [data-a="0"]')); await p;
+  });
+
   it("uses the singular for one item", async () => {
     const p = app.call("remove", "f2");
     await tick();

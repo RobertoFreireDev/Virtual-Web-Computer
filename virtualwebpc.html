@@ -322,6 +322,8 @@ body.nav-closed aside,body.nav-closed .grip{display:none}
 }
 .pick-row{display:flex;align-items:center;gap:6px;height:28px;padding:0 6px;border-radius:5px;cursor:pointer;user-select:none}
 .pick-row:hover{background:var(--panel-2)}
+.pick-tree.ro .pick-row{cursor:default}
+.pick-tree.ro .pick-row:hover{background:none}
 .pick-row input{width:14px;height:14px;margin:0;accent-color:var(--accent);cursor:pointer;flex:none}
 .pick-row .gl{display:inline-flex;width:16px;flex:none;color:var(--muted)}
 .pick-row .gl svg{width:14px;height:14px}
@@ -532,11 +534,18 @@ function addFolder(){
 }
 async function remove(id){
   const f = find(id); if(!f) return;
-  const count = f.node.type==="folder" ? (()=>{ let c=0; each(()=>c++, f.node.children||[]); return c; })() : 0;
+  /* a folder's dialog lists everything nested inside it, so nothing gets deleted unseen */
+  let count = 0, rows = "";
+  if(f.node.type==="folder") each((n, depth) => {
+    count++;
+    rows += `<div class="pick-row" style="padding-left:${6 + depth * 18}px">
+      <span class="gl">${ICON[n.type]}</span><span class="label">${esc(n.name)}</span></div>`;
+  }, f.node.children||[]);
   const ok = await confirmBox(
     "Delete " + (f.node.type==="folder" ? "folder" : "page") + "?",
     count ? `“${f.node.name}” and ${count} item${count>1?"s":""} inside it will be removed.`
-          : `“${f.node.name}” will be removed.`, "Delete");
+          : `“${f.node.name}” will be removed.`, "Delete",
+    count ? `<div class="pick-tree ro">${rows}</div>` : "");
   if(!ok) return;
   const gone = f.node.id===db.selected || (f.node.children && contains(f.node, find(db.selected)?.node||{}));
   f.arr.splice(f.arr.indexOf(f.node), 1);
@@ -1339,9 +1348,10 @@ function openDialog(html, focusSel){
   if(f){ f.focus(); f.select && f.select(); }
 }
 function closeDialog(){ veil.classList.remove("open"); dialog.classList.remove("wide"); dialog.innerHTML = ""; }
-function confirmBox(title, msg, label = "OK"){
+/* `extra` is trusted, already-escaped markup shown between the message and the buttons */
+function confirmBox(title, msg, label = "OK", extra = ""){
   return new Promise(res => {
-    openDialog(`<h3>${esc(title)}</h3><p>${esc(msg)}</p><div class="acts">
+    openDialog(`<h3>${esc(title)}</h3><p>${esc(msg)}</p>${extra}<div class="acts">
       <button class="btn ghost" data-a="0">Cancel</button>
       <button class="btn ${label === "Delete" ? "danger" : "primary"}" data-a="1">${esc(label)}</button></div>`);
     dialog.querySelectorAll("[data-a]").forEach(b => b.onclick = () => { closeDialog(); res(b.dataset.a === "1"); });
