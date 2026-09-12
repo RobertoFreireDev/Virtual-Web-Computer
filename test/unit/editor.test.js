@@ -282,6 +282,38 @@ describe("keyboard outside code blocks", () => {
   });
 });
 
+describe("Enter inside a quote", () => {
+  const sel = () => app.window.getSelection().getRangeAt(0);
+
+  it("ends the quote and continues in a new paragraph instead of a new quote line", () => {
+    editor.innerHTML = "<blockquote>quoted</blockquote>";
+    const q = editor.querySelector("blockquote");
+    caret(q.firstChild, 6);
+    const ev = key(editor, "Enter");
+    expect(ev.defaultPrevented).toBe(true);
+    expect(editor.innerHTML).toBe("<blockquote>quoted</blockquote><p><br></p>");
+    expect(editor.querySelectorAll("blockquote")).toHaveLength(1);
+    expect(sel().collapsed).toBe(true);
+    expect(sel().startContainer).toBe(q.nextElementSibling);
+    expect(content()).toBe("<blockquote>quoted</blockquote><p><br></p>");
+  });
+
+  it("moves the text after the caret into the new paragraph", () => {
+    editor.innerHTML = "<blockquote>quo<em>ted</em> end</blockquote>";
+    caret(editor.querySelector("em").firstChild, 1);
+    key(editor, "Enter");
+    expect(editor.innerHTML).toBe("<blockquote>quo<em>t</em></blockquote><p><em>ed</em> end</p>");
+    expect(editor.querySelector("blockquote").nextElementSibling.contains(sel().startContainer)).toBe(true);
+  });
+
+  it("Shift+Enter is left to the browser so a quote can still have several lines", () => {
+    editor.innerHTML = "<blockquote>quoted</blockquote>";
+    caret(editor.querySelector("blockquote").firstChild, 6);
+    expect(key(editor, "Enter", { shiftKey: true }).defaultPrevented).toBe(false);
+    expect(editor.innerHTML).toBe("<blockquote>quoted</blockquote>");
+  });
+});
+
 describe("Backspace at the start of a quote", () => {
   const sel = () => app.window.getSelection().getRangeAt(0);
 

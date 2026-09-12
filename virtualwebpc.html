@@ -1017,7 +1017,32 @@ editor.addEventListener("keydown", e => {
     const q = quoteStart();
     if(q){ e.preventDefault(); unquote(q); raw = editor.innerHTML; commit(); }
   }
+  if(e.key === "Enter" && !e.ctrlKey && !e.shiftKey){   // Enter ends the quote (Shift+Enter breaks a line inside it)
+    const q = currentQuote();
+    if(q){ e.preventDefault(); splitQuote(q); raw = editor.innerHTML; commit(); }
+  }
 });
+function currentQuote(){
+  const s = getSelection();
+  if(!s.rangeCount) return null;
+  let n = s.getRangeAt(0).startContainer;
+  n = n.nodeType === 3 ? n.parentNode : n;
+  const q = n && n.closest ? n.closest("blockquote") : null;
+  return q && editor.contains(q) ? q : null;
+}
+/* move everything after the caret out of the quote into a paragraph placed after it */
+function splitQuote(q){
+  const s = getSelection(), r = s.getRangeAt(0);
+  r.deleteContents();
+  const rest = document.createRange();
+  rest.setStart(r.startContainer, r.startOffset); rest.setEnd(q, q.childNodes.length);
+  const p = document.createElement("p");
+  p.appendChild(rest.extractContents());
+  if(!p.textContent && !p.querySelector("br")) p.innerHTML = "<br>";
+  if(!q.textContent && !q.querySelector("br")) q.innerHTML = "<br>";
+  q.after(p);
+  caretTo(p, false);
+}
 /* the <blockquote> whose first character the collapsed caret sits before, else null */
 function quoteStart(){
   const s = getSelection();
