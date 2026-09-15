@@ -88,13 +88,89 @@ describe("render()", () => {
     const wrap = app.q("#viewer .code-wrap");
     expect(wrap).not.toBeNull();
     expect(wrap.querySelector(".code-bar span").textContent).toBe("JavaScript");
-    expect(wrap.querySelector(".code-bar button").textContent).toBe("Copy");
+    expect(wrap.querySelector(".code-bar button.copy").textContent).toBe("Copy");
     expect(wrap.querySelector("pre.code .t-keyword").textContent).toBe("const");
   });
 });
 
+describe("collapsible code blocks (view mode)", () => {
+  const openGamma = () => { db().selected = "p3"; app.call("open", "p3"); return app.q("#viewer .code-wrap"); };
+
+  it("starts collapsed with a toggle in the bar", () => {
+    const wrap = openGamma(), tog = wrap.querySelector(".code-bar button.tog");
+    expect(tog).not.toBeNull();
+    expect(wrap.classList.contains("collapsed")).toBe(true);
+    expect(tog.getAttribute("aria-expanded")).toBe("false");
+    expect(tog.title).toBe("Expand");
+    expect(wrap.querySelector("pre.code")).not.toBeNull();          // the code is still there, just hidden
+  });
+
+  it("shows the line count while collapsed", () => {
+    app.set("raw", '<pre class="code" data-lang="plain">a\nb\nc\n</pre>');
+    app.call("render");
+    expect(app.q("#viewer .code-bar .n").textContent).toBe("3 lines");
+    app.set("raw", '<pre class="code" data-lang="plain">one</pre>');
+    app.call("render");
+    expect(app.q("#viewer .code-bar .n").textContent).toBe("1 line");
+  });
+
+  it("the toggle expands and collapses again", () => {
+    const wrap = openGamma(), tog = wrap.querySelector(".tog");
+    click(tog);
+    expect(wrap.classList.contains("collapsed")).toBe(false);
+    expect(tog.getAttribute("aria-expanded")).toBe("true");
+    expect(tog.title).toBe("Collapse");
+    click(tog);
+    expect(wrap.classList.contains("collapsed")).toBe(true);
+    expect(tog.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("each block toggles on its own", () => {
+    app.set("raw", '<pre class="code" data-lang="plain">a</pre><p>x</p><pre class="code" data-lang="sql">b</pre>');
+    app.call("render");
+    const wraps = app.qa("#viewer .code-wrap");
+    click(wraps[1].querySelector(".tog"));
+    expect(wraps[0].classList.contains("collapsed")).toBe(true);
+    expect(wraps[1].classList.contains("collapsed")).toBe(false);
+  });
+
+  it("is not saved: the state never reaches the page content", () => {
+    const wrap = openGamma();
+    click(wrap.querySelector(".tog"));
+    app.flush();
+    expect(app.get("raw")).not.toContain("collapsed");
+    expect(app.get("raw")).not.toContain("tog");
+    expect(app.stored().tree[1].content).toBe(sampleTree()[1].content);
+  });
+
+  it("is reset every time the page is opened: an expanded block is collapsed again", () => {
+    const wrap = openGamma();
+    click(wrap.querySelector(".tog"));
+    expect(wrap.classList.contains("collapsed")).toBe(false);
+    app.call("open", "p1"); app.call("open", "p3");
+    expect(app.q("#viewer .code-wrap").classList.contains("collapsed")).toBe(true);
+  });
+
+  it("collapses again after a round of editing", () => {
+    const wrap = openGamma();
+    click(wrap.querySelector(".tog"));
+    app.call("setMode", "edit");
+    expect(app.q("#editor .tog")).toBeNull();                        // nothing of it leaks into the editor
+    expect(app.q("#editor pre.code").textContent).toBe("const a = 1;");
+    app.call("setMode", "view");
+    expect(app.q("#viewer .code-wrap").classList.contains("collapsed")).toBe(true);
+  });
+
+  it("Copy still works on a collapsed block", async () => {
+    const wrap = openGamma();
+    click(wrap.querySelector(".copy"));
+    await tick();
+    expect(app.clipboard.text).toBe("const a = 1;");
+  });
+});
+
 describe("decorate()", () => {
-  const openGamma = () => { db().selected = "p3"; app.call("open", "p3"); return app.q("#viewer .code-bar button"); };
+  const openGamma = () => { db().selected = "p3"; app.call("open", "p3"); return app.q("#viewer .code-bar button.copy"); };
 
   it("copies the raw code (not the highlighted HTML) and confirms briefly", async () => {
     const btn = openGamma();

@@ -231,11 +231,18 @@ body.nav-closed aside,body.nav-closed .grip{display:none}
 .code-wrap{margin:1.4em 0;position:relative}
 .code-wrap pre.code{margin:0}
 .code-bar{
-  display:flex;align-items:center;justify-content:space-between;
+  display:flex;align-items:center;gap:6px;
   padding:0 4px 5px;color:var(--faint);font:11.5px/1 var(--sans);
 }
 .code-bar button{color:var(--faint);padding:2px 6px;border-radius:4px}
 .code-bar button:hover{color:var(--text);background:var(--raise)}
+.code-bar .tog{display:grid;place-items:center;width:20px;height:20px;padding:0}
+.code-bar .tog svg{transform:rotate(180deg);transition:transform .12s ease}
+.code-bar .n{flex:1;opacity:.75}
+/* collapsed (the default on every render): only the bar shows, the chevron points down */
+.code-wrap.collapsed .code-bar{padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:#0b0e12}
+.code-wrap.collapsed .tog svg{transform:none}
+.code-wrap.collapsed pre.code{display:none}
 .body[contenteditable="true"] pre.code{
   border-color:#2f3a46;border-left:2px solid var(--accent);
   padding-top:40px;                    /* reserved strip for the header */
@@ -665,6 +672,11 @@ function wire(row, n){
     clearDrop(); if(id) move(id, n.id, where);
   });
 }
+/* a click in the blank part of the tree drops the highlight, so new items land at the root */
+treeEl.addEventListener("click", e => {
+  if(e.target.closest(".row") || db.selected == null) return;
+  db.selected = null; save(); renderTree();
+});
 function clearDrop(){
   treeEl.querySelectorAll(".into,.before,.after").forEach(r => r.classList.remove("into","before","after"));
   treeEl.classList.remove("rootdrop");
@@ -1014,18 +1026,29 @@ function render(){
   viewer.innerHTML = clean(raw);
   decorate(viewer);
 }
+/* view-mode chrome for code blocks: a bar with a collapse toggle, the language, the line
+   count and Copy. Blocks start collapsed on every render; the state lives only in the
+   viewer DOM (never in `raw`), so nothing about it is stored or exported. */
+const CHEV = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 6 8 10.5 12.5 6"/></svg>';
 function decorate(root){
   root.querySelectorAll("pre.code").forEach(pre => {
     const lang = pre.dataset.lang || "plain";
     const code = pre.textContent.replace(/\u200B/g, "");
     pre.innerHTML = highlight(code, lang);
     const wrap = document.createElement("div");
-    wrap.className = "code-wrap";
+    wrap.className = "code-wrap collapsed";
     const bar = document.createElement("div");
     bar.className = "code-bar";
-    bar.innerHTML = `<span>${esc((LANGS[lang]||{}).label || lang)}</span>`;
+    const n = code.replace(/\n$/, "").split("\n").length;
+    bar.innerHTML = `<button class="tog" aria-expanded="false" title="Expand">${CHEV}</button>` +
+                    `<span>${esc((LANGS[lang]||{}).label || lang)}</span><span class="n">${n} line${n !== 1 ? "s" : ""}</span>`;
+    bar.querySelector(".tog").onclick = e => {
+      const open = wrap.classList.toggle("collapsed") === false;
+      e.currentTarget.setAttribute("aria-expanded", String(open));
+      e.currentTarget.title = open ? "Collapse" : "Expand";
+    };
     const copy = document.createElement("button");
-    copy.textContent = "Copy";
+    copy.className = "copy"; copy.textContent = "Copy";
     copy.onclick = () => {
       if(!navigator.clipboard){ toast("Clipboard blocked by the browser"); return; }
       navigator.clipboard.writeText(code).then(() => { copy.textContent = "Copied"; setTimeout(() => copy.textContent = "Copy", 1400); })
@@ -1730,7 +1753,7 @@ addEventListener("keydown", e => {
   if(k === "s"){ e.preventDefault(); commit(); if(mode !== "view") setMode("view"); }
   else if(k === "e"){ e.preventDefault(); if(openPage()){ if(mode !== "view") commit(); setMode(mode === "view" ? "edit" : "view"); } }
   else if(k === "\\"){ e.preventDefault(); toggleNav(); }
-  else if(k === "f" && !e.shiftKey){ e.preventDefault(); if(!db.navOpen) toggleNav(); $("search").focus(); }
+  /* Ctrl+F is deliberately left alone: the browser's find-in-page searches the open page */
 });
 addEventListener("beforeunload", () => { if(mode !== "view") commit(); flush(); });
 

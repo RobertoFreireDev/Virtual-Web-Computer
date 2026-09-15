@@ -144,12 +144,20 @@ describe("keyboard shortcuts", () => {
     expect(db().navOpen).toBe(false);
   });
 
-  it("Ctrl+F focuses the search, opening the sidebar if needed", () => {
+  it("Ctrl+F is left to the browser (find in page), even with the sidebar closed", () => {
     app.call("toggleNav");
     const ev = key(body(), "f", { ctrlKey: true });
-    expect(ev.defaultPrevented).toBe(true);
-    expect(db().navOpen).toBe(true);
-    expect(app.document.activeElement).toBe(app.$("search"));
+    expect(ev.defaultPrevented).toBe(false);
+    expect(db().navOpen).toBe(false);
+    expect(app.document.activeElement).not.toBe(app.$("search"));
+  });
+
+  it("Ctrl+F does nothing while editing either", () => {
+    app.call("setMode", "edit");
+    const ev = key(app.$("editor"), "f", { ctrlKey: true });
+    expect(ev.defaultPrevented).toBe(false);
+    expect(app.get("mode")).toBe("edit");
+    expect(app.document.activeElement).not.toBe(app.$("search"));
   });
 
   it("Ctrl+Shift+F is left to the browser", () => {

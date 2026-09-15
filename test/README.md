@@ -26,18 +26,18 @@ Requires Node 18+ (developed on Node 24). No browser is needed.
 | `unit/html-structure.test.js` | Static markup contract — every id, title, toolbar `data-cmd`, hidden file input, default visibility. |
 | `unit/storage.test.js` | First-run seed, `load()`, debounced `save()`, blocked `localStorage` (memory-only mode), `flag()`, `toast()`, `uid()`. |
 | `unit/tree-model.test.js` | `find`, `each`, `contains`, `chainOf`, `target`, `addPage`, `addFolder`, `remove` (confirm dialog), `move` (incl. cycle guard), `duplicate`. |
-| `unit/tree-view.test.js` | `renderTree`/`build`, stats, search (`matches`), row click / twisty / double-click, inline rename (`renameInTree`), drag & drop incl. root drop. |
+| `unit/tree-view.test.js` | `renderTree`/`build`, stats, search (`matches`), row click / twisty / double-click, click outside the rows (clears the highlight so new items go to the root), inline rename (`renameInTree`), drag & drop incl. root drop. |
 | `unit/context-menu.test.js` | Right-click menu items per node type, positioning/clamping, every action, closing on outside click / window blur / Escape. |
 | `unit/sanitize.test.js` | `clean()` tag & attribute whitelist, dropped vs. unwrapped elements, comments, Google Docs `<b>` wrapper, `href` scheme / `src` filtering, `<pre>` + `data-lang` normalisation, `esc()` / `attr()`. |
 | `unit/highlight.test.js` | `LANGS` table and `highlight()` for every language (C#, SQL, JS, JSON, HTML, CSS, Python, Shell). |
-| `unit/document.test.js` | `open` (incl. mid-edit page switch), `crumbs`, `render` (keyed on `openId`), `decorate` (copy button, escaped label), `setMode` (view/edit/source), `format`/`unformat`, `commit`, Edit/Done/HTML buttons, title input & Enter/Tab, `tail`, `caretTo`, click-below-text, autosave debounce. |
+| `unit/document.test.js` | `open` (incl. mid-edit page switch), `crumbs`, `render` (keyed on `openId`), `decorate` (copy button, escaped label), collapsible code blocks (start collapsed on every render, toggle, line count, never stored), `setMode` (view/edit/source), `format`/`unformat`, `commit`, Edit/Done/HTML buttons, title input & Enter/Tab, `tail`, `caretTo`, click-below-text, autosave debounce. |
 | `unit/editor.test.js` | Toolbar `execCommand` buttons, Code block / Table / Link buttons (with dialog), paste handling, `currentPre`/`insertText`, keyboard inside and outside code blocks. |
 | `unit/format-code.test.js` | `LANGS[lang].fmt()` pretty-printers: C-like brace re-breaking (JS/C#/CSS), JSON, SQL clauses/sub-queries, HTML tags, Python/Shell indentation, plain text; idempotence for every language. |
 | `unit/code-blocks.test.js` | Floating code-block headers: `makeHead`, `syncBlocks` positioning, language `<select>`, Format button (rewrite, `<br>` handling, error/already-formatted toasts), delete button, MutationObserver/rAF scheduling, resize. |
 | `unit/tables.test.js` | Table tools: `#tbl` bar markup, `currentCell`, `syncTable` positioning/visibility and its triggers, every row/column button (header rows are protected: adds go to the body, `− Row` removes the first body row), delete table (confirm), stale-bar guards, `Tab`/`Shift+Tab` between cells and `Tab` past the last cell. |
 | `unit/dialogs.test.js` | `openDialog`/`closeDialog`, `confirmBox`, `promptBox`, `linkBox`, `choiceBox`, `pickBox` (indeterminate folders, select all/none, disabled OK), Escape / veil-click priority. |
 | `unit/export-import.test.js` | `prune`, `normalize`, Export button (picker → JSON download → toast), Import flow (invalid JSON, empty, picker, Merge/Replace), round-trip. |
-| `unit/sidebar-shortcuts.test.js` | Resize grip (clamp 190–520, persist), `toggleNav`, Ctrl+S / Ctrl+E / Ctrl+\ / Ctrl+F / Escape, `beforeunload`. |
+| `unit/sidebar-shortcuts.test.js` | Resize grip (clamp 190–520, persist), `toggleNav`, Ctrl+S / Ctrl+E / Ctrl+\ / Escape (and Ctrl+F being left to the browser's find-in-page), `beforeunload`. |
 
 ## How the harness works
 

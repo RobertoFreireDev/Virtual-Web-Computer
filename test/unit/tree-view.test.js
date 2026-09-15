@@ -176,6 +176,39 @@ describe("row interactions", () => {
   });
 });
 
+describe("clicking outside the rows", () => {
+  it("clears the highlight so new items go to the root", () => {
+    click(app.$("tree"));
+    expect(db().selected).toBeNull();
+    expect(app.qa("#tree .row.active")).toHaveLength(0);
+    expect(app.call("target")).toBe(db().tree);
+    click(app.$("btnPage"));
+    expect(db().tree.at(-1).type).toBe("page");
+    expect(app.call("find", "f1").node.children.map(n => n.id)).toEqual(["p1", "f2"]);
+  });
+
+  it("also clears it from the gutter of a nested list, and persists", () => {
+    db().selected = "f1"; app.call("renderTree");       // highlight the (open) folder
+    click(app.$("tree").querySelector(".children"));    // the indented strip beside its children
+    expect(db().selected).toBeNull();
+    app.flush();
+    expect(app.stored().selected).toBeNull();
+    click(app.$("btnFolder"));
+    expect(db().tree.at(-1).name).toBe("New folder");
+  });
+
+  it("keeps the open page in the panel", () => {
+    click(app.$("tree"));
+    expect(app.get("openId")).toBe("p1");
+    expect(app.$("doc").style.display).toBe("flex");
+  });
+
+  it("does not interfere with clicks on rows", () => {
+    click(app.row("p3"));
+    expect(db().selected).toBe("p3");
+  });
+});
+
 describe("renameInTree()", () => {
   it("makes the label editable, focuses it and selects all", () => {
     app.call("renameInTree", "p3");
