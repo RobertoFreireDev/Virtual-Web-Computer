@@ -175,7 +175,7 @@ body.nav-closed aside,body.nav-closed .grip{display:none}
 .tb-hint{margin-left:auto;color:var(--faint);font-size:11.5px}
 
 .scroll{flex:1;overflow:auto;min-height:0}
-.page{max-width:900px;margin:0 auto;padding:34px 40px 120px;position:relative}
+.page{margin:0 auto;padding:34px 40px 120px;position:relative}
 #source{
   width:100%;height:100%;min-height:100%;resize:none;border:0;outline:none;
   background:var(--ink);color:#b9c4d0;font:12.5px/1.7 var(--mono);padding:22px 26px;
@@ -398,6 +398,7 @@ body.nav-closed aside,body.nav-closed .grip{display:none}
         <input id="docTitle" spellcheck="false">
         <span class="status" id="status"></span>
         <div class="sep"></div>
+        <button class="btn ghost" id="btnPaste" title="Paste from another application">Paste &#9662;</button>
         <button class="btn ghost" id="btnSource" title="Edit raw HTML">HTML</button>
         <button class="btn" id="btnMode">Edit</button>
       </div>
@@ -723,7 +724,11 @@ function openMenu(x, y, n){
   items.push(["Rename", () => renameInTree(n.id)]);
   if(n.type === "page") items.push(["Duplicate", () => duplicate(n.id)]);
   items.push(["-"], ["Delete", () => remove(n.id), true]);
-  menuEl.innerHTML = "";
+  showMenu(x, y, items);
+}
+/* items: [label, fn, danger?] or ["-"] for a divider */
+function showMenu(x, y, items){
+  menuEl.innerHTML = ""; menuEl._of = null;
   for(const it of items){
     if(it[0] === "-"){ menuEl.insertAdjacentHTML("beforeend", '<div class="div"></div>'); continue; }
     const b = document.createElement("button");
@@ -1252,6 +1257,58 @@ $("tbTable").onclick = () => {
     `<table><thead><tr><th>Column</th><th>Column</th><th>Column</th></tr></thead><tbody>` +
     `<tr>${cell.repeat(3)}</tr><tr>${cell.repeat(3)}</tr></tbody></table><p><br></p>`);
   raw = editor.innerHTML; commit();
+};
+
+/* ═══════════════════════════ paste from… ═══════════════════════════ */
+/* Excel puts the copied range on the clipboard as text: one line per row (CRLF),
+   a tab between cells, and a cell that itself contains a line break or a tab is
+   wrapped in double quotes ("" inside stands for one quote). Returns rows of cells. */
+function parseExcel(text){
+  const rows = [[""]];
+  let q = false;
+  for(let i = 0; i < text.length; i++){
+    const c = text[i], row = rows[rows.length - 1];
+    if(q){
+      if(c === '"'){ if(text[i + 1] === '"'){ row[row.length - 1] += '"'; i++; } else q = false; }
+      else row[row.length - 1] += c;
+    }
+    else if(c === '"' && row[row.length - 1] === "") q = true;
+    else if(c === "\t") row.push("");
+    else if(c === "\n" || c === "\r"){ if(c === "\r" && text[i + 1] === "\n") i++; rows.push([""]); }
+    else row[row.length - 1] += c;
+  }
+  while(rows.length && rows[rows.length - 1].every(v => v === "")) rows.pop();   // the trailing CRLF
+  const w = Math.max(0, ...rows.map(r => r.length));
+  return rows.map(r => r.concat(Array(w - r.length).fill("")));
+}
+/* first row → header, the rest → body; same shape as the Table button makes */
+function excelTable(rows){
+  const cell = (t, tag) => `<${tag}>${t === "" ? "<br>" : esc(t)}</${tag}>`;
+  const [head, ...body] = rows;
+  return `<table><thead><tr>${head.map(t => cell(t, "th")).join("")}</tr></thead><tbody>` +
+    body.map(r => `<tr>${r.map(t => cell(t, "td")).join("")}</tr>`).join("") + `</tbody></table><p><br></p>`;
+}
+async function pasteExcel(keep){
+  if(!navigator.clipboard || !navigator.clipboard.readText){ toast("Clipboard blocked by the browser — paste with Ctrl+V instead"); return; }
+  let text;
+  try{ text = await navigator.clipboard.readText(); }
+  catch(e){ toast("Clipboard access denied — paste with Ctrl+V instead"); return; }
+  const rows = parseExcel(text || "");
+  if(!rows.length){ toast("Nothing to paste on the clipboard"); return; }
+  if(mode === "source") commit();
+  if(mode !== "edit") setMode("edit");        // caret lands at the end of the page
+  else { editor.focus(); if(keep){ const s = getSelection(); s.removeAllRanges(); s.addRange(keep); } }
+  if(currentPre()) caretTo(editor.lastElementChild || editor);   // a table cannot live inside a code block
+  document.execCommand("insertHTML", false, excelTable(rows));
+  raw = editor.innerHTML; commit(); syncBlocks();
+}
+$("btnPaste").onmousedown = e => { e.preventDefault(); e.currentTarget._open = menuEl.classList.contains("open") && menuEl._of === "paste"; };
+$("btnPaste").onclick = e => {
+  if(e.currentTarget._open) return;         // second click on the button closes (the global mousedown already did)
+  const s = getSelection(), keep = mode === "edit" && s.rangeCount ? s.getRangeAt(0).cloneRange() : null;   // menu clicks drop the caret
+  const r = e.currentTarget.getBoundingClientRect();
+  showMenu(r.left, r.bottom + 4, [["From Excel", () => pasteExcel(keep)]]);
+  menuEl._of = "paste";
 };
 
 editor.addEventListener("keydown", e => {

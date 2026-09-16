@@ -114,6 +114,12 @@ export function loadApp({ stored, storage = "ok", clipboardMode = "ok" } = {}) {
             clipboard.text = text;
             return Promise.resolve();
           },
+          /* resolves with `clipboard.text` (tests set it to what Excel & co. would have copied) */
+          readText() {
+            clipboard.calls++;
+            if (clipboard.mode !== "ok") return Promise.reject(new Error("blocked"));
+            return Promise.resolve(clipboard.text || "");
+          },
           /* resolves with ClipboardItem-like entries; `clipboard.image` (a Blob) is served as image/png */
           read() {
             clipboard.calls++;
@@ -124,7 +130,7 @@ export function loadApp({ stored, storage = "ok", clipboardMode = "ok" } = {}) {
           }
         }
       });
-      if (clipboardMode === "noread") delete window.navigator.clipboard.read;
+      if (clipboardMode === "noread") { delete window.navigator.clipboard.read; delete window.navigator.clipboard.readText; }
 
       /* downloads */
       const OrigBlob = window.Blob;
