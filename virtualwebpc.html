@@ -398,7 +398,6 @@ body.nav-closed aside,body.nav-closed .grip{display:none}
         <input id="docTitle" spellcheck="false">
         <span class="status" id="status"></span>
         <div class="sep"></div>
-        <button class="btn ghost" id="btnPaste" title="Paste from another application">Paste &#9662;</button>
         <button class="btn ghost" id="btnSource" title="Edit raw HTML">HTML</button>
         <button class="btn" id="btnMode">Edit</button>
       </div>
@@ -424,6 +423,7 @@ body.nav-closed aside,body.nav-closed .grip{display:none}
         <div class="tb-sep"></div>
         <button id="tbBlock" title="Insert code block">Code block</button>
         <button id="tbImage" title="Paste the image on the clipboard (e.g. a screenshot) into the page">Image</button>
+        <button id="tbPaste" title="Paste from another application">Paste &#9662;</button>
         <div class="tb-sep"></div>
         <button id="tbLink" title="Link">Link</button>
         <button id="tbTable" title="Insert table">Table</button>
@@ -1295,19 +1295,18 @@ async function pasteExcel(keep){
   catch(e){ toast("Clipboard access denied — paste with Ctrl+V instead"); return; }
   const rows = parseExcel(text || "");
   if(!rows.length){ toast("Nothing to paste on the clipboard"); return; }
-  if(mode === "source") commit();
-  if(mode !== "edit") setMode("edit");        // caret lands at the end of the page
-  else { editor.focus(); if(keep){ const s = getSelection(); s.removeAllRanges(); s.addRange(keep); } }
+  editor.focus();
+  if(keep){ const s = getSelection(); s.removeAllRanges(); s.addRange(keep); }
   if(currentPre()) caretTo(editor.lastElementChild || editor);   // a table cannot live inside a code block
   document.execCommand("insertHTML", false, excelTable(rows));
   raw = editor.innerHTML; commit(); syncBlocks();
 }
-$("btnPaste").onmousedown = e => { e.preventDefault(); e.currentTarget._open = menuEl.classList.contains("open") && menuEl._of === "paste"; };
-$("btnPaste").onclick = e => {
+$("tbPaste").onmousedown = e => { e.preventDefault(); e.currentTarget._open = menuEl.classList.contains("open") && menuEl._of === "paste"; };
+$("tbPaste").onclick = e => {
   if(e.currentTarget._open) return;         // second click on the button closes (the global mousedown already did)
-  const s = getSelection(), keep = mode === "edit" && s.rangeCount ? s.getRangeAt(0).cloneRange() : null;   // menu clicks drop the caret
+  const s = getSelection(), keep = s.rangeCount ? s.getRangeAt(0).cloneRange() : null;   // menu clicks drop the caret
   const r = e.currentTarget.getBoundingClientRect();
-  showMenu(r.left, r.bottom + 4, [["From Excel", () => pasteExcel(keep)]]);
+  showMenu(r.left, r.bottom + 4, [["From table", () => pasteExcel(keep)]]);
   menuEl._of = "paste";
 };
 

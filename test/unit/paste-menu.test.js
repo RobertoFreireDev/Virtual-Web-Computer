@@ -1,7 +1,7 @@
-/*
- * The "Paste" dropdown in the document header. Its only entry so far,
- * "From Excel", turns the tab-separated text Excel puts on the clipboard
- * into a table in the open page.
+﻿/*
+ * The "Paste" dropdown in the editing toolbar (next to Image, so only
+ * visible in edit mode). Its only entry so far, "From table", turns the
+ * tab-separated text Excel puts on the clipboard into a table at the caret.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { loadApp, sampleTree, tick } from "../helpers/app.js";
@@ -20,37 +20,48 @@ const menuItems = () => app.qa("#menu button").map(b => b.textContent);
 const settle = async () => { for (let i = 0; i < 4; i++) await tick(); };
 
 async function fromExcel() {
-  click(app.$("btnPaste"));
-  click(app.qa("#menu button").find(b => b.textContent === "From Excel"));
+  if (app.get("mode") !== "edit") app.call("setMode", "edit");
+  click(app.$("tbPaste"));
+  click(app.qa("#menu button").find(b => b.textContent === "From table"));
   await settle();
 }
 
 describe("Paste button", () => {
-  it("sits in the document header and opens a dropdown with only 'From Excel'", () => {
-    const btn = app.$("btnPaste");
-    expect(btn.closest(".doc-bar")).not.toBeNull();
+  it("lives in the editing toolbar right after Image, so it is only shown in edit mode", () => {
+    const btn = app.$("tbPaste");
+    expect(btn.closest("#toolbar")).not.toBeNull();
+    expect(btn.closest(".doc-bar")).toBeNull();
+    expect(app.$("tbImage").nextElementSibling).toBe(btn);
+    expect(app.$("toolbar").style.display).toBe("none");       // view mode: no toolbar, no button
+    app.call("setMode", "edit");
+    expect(app.$("toolbar").style.display).not.toBe("none");
+    app.call("setMode", "source");
+    expect(app.$("toolbar").style.display).toBe("none");
+  });
+
+  it("opens a dropdown with only 'From table'", () => {
+    app.call("setMode", "edit");
     expect(app.$("menu").classList.contains("open")).toBe(false);
-    click(btn);
+    click(app.$("tbPaste"));
     expect(app.$("menu").classList.contains("open")).toBe(true);
-    expect(menuItems()).toEqual(["From Excel"]);
+    expect(menuItems()).toEqual(["From table"]);
   });
 
   it("keeps the editor selection (mousedown is prevented) and closes on outside click", () => {
     app.call("setMode", "edit");
-    expect(mousedown(app.$("btnPaste")).defaultPrevented).toBe(true);
-    click(app.$("btnPaste"));
+    expect(mousedown(app.$("tbPaste")).defaultPrevented).toBe(true);
+    click(app.$("tbPaste"));
     mousedown(app.document.body);
     expect(app.$("menu").classList.contains("open")).toBe(false);
   });
 });
 
-describe("From Excel", () => {
-  it("turns a real Excel copy into a table with a header row, from view mode, and saves", async () => {
+describe("From table", () => {
+  it("turns a real Excel copy into a table with a header row and saves", async () => {
     app.clipboard.text = EXCEL;
-    expect(app.get("mode")).toBe("view");
     await fromExcel();
 
-    expect(app.get("mode")).toBe("edit");           // pasting means editing
+    expect(app.get("mode")).toBe("edit");
     const table = app.$("editor").querySelector("table");
     expect(table).not.toBeNull();
     expect([...table.querySelectorAll("thead th")].map(c => c.textContent)).toEqual(["Name", "Qty", "Price"]);
@@ -94,7 +105,7 @@ describe("From Excel", () => {
     app.clipboard.text = "";
     await fromExcel();
     expect(app.toastText()).toBe("Nothing to paste on the clipboard");
-    expect(app.get("mode")).toBe("view");
+    expect(app.$("editor").querySelector("table")).toBeNull();
     expect(content()).toBe("<p>alpha text</p>");
   });
 
