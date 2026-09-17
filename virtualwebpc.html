@@ -439,10 +439,14 @@ body.nav-closed aside,body.nav-closed .grip{display:none}
           <div class="tbl" id="tbl" style="display:none">
             <button data-t="rowAbove" title="Insert row above">+ Row &#8593;</button>
             <button data-t="rowBelow" title="Insert row below">+ Row &#8595;</button>
+            <button data-t="rowUp" title="Move this row up">&#8593; Row</button>
+            <button data-t="rowDown" title="Move this row down">&#8595; Row</button>
             <button data-t="delRow" title="Delete this row">&#8722; Row</button>
             <span class="sep"></span>
             <button data-t="colLeft" title="Insert column left">+ Col &#8592;</button>
             <button data-t="colRight" title="Insert column right">+ Col &#8594;</button>
+            <button data-t="colPrev" title="Move this column left">&#8592; Col</button>
+            <button data-t="colNext" title="Move this column right">&#8594; Col</button>
             <button data-t="delCol" title="Delete this column">&#8722; Col</button>
             <span class="sep"></span>
             <button data-t="delTable" class="x" title="Delete this table">
@@ -1539,11 +1543,34 @@ function removeTable(table){
   table.replaceWith(p);
   return p;
 }
+/* swap the row with its neighbour; the header never moves and nothing moves above it */
+function moveRow(cell, down){
+  const tr = cell.parentNode;
+  if(isHeader(tr)){ toast("The header row stays on top"); return cell; }
+  const other = down ? tr.nextElementSibling : tr.previousElementSibling;
+  if(!other || other.tagName !== "TR" || isHeader(other)){ toast(down ? "No row below to swap with" : "No row above to swap with"); return cell; }
+  if(down) tr.before(other); else tr.after(other);
+  return cell;
+}
+/* swap the column with its neighbour in every row; rows too short to have both cells are left alone */
+function moveCol(cell, right){
+  const i = cell.cellIndex, j = right ? i + 1 : i - 1;
+  if(j < 0 || j >= cell.parentNode.cells.length){ toast(right ? "No column to the right to swap with" : "No column to the left to swap with"); return cell; }
+  [...cell.closest("table").rows].forEach(row => {
+    const a = row.cells[Math.min(i, j)], b = row.cells[Math.max(i, j)];
+    if(a && b) a.before(b);
+  });
+  return cell;
+}
 const TABLE_OPS = {
   rowAbove: cell => addRow(cell, false),
   rowBelow: cell => addRow(cell, true),
+  rowUp:    cell => moveRow(cell, false),
+  rowDown:  cell => moveRow(cell, true),
   colLeft:  cell => addCol(cell, false),
   colRight: cell => addCol(cell, true),
+  colPrev:  cell => moveCol(cell, false),
+  colNext:  cell => moveCol(cell, true),
   delRow(cell){
     let tr = cell.parentNode; const table = tr.closest("table");
     if(isHeader(tr)){                          // the header stays; remove the first body row instead

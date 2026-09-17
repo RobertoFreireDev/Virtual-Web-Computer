@@ -35,7 +35,7 @@ describe("markup", () => {
   it("has a hidden table bar with every row/column button, each titled", () => {
     expect(tbl.style.display).toBe("none");
     expect(app.qa("#tbl button").map(b => b.dataset.t)).toEqual(
-      ["rowAbove", "rowBelow", "delRow", "colLeft", "colRight", "delCol", "delTable"]);
+      ["rowAbove", "rowBelow", "rowUp", "rowDown", "delRow", "colLeft", "colRight", "colPrev", "colNext", "delCol", "delTable"]);
     for (const b of app.qa("#tbl button")) expect(b.title).not.toBe("");
     expect(btn("delTable").querySelector("svg")).not.toBeNull();
   });
@@ -238,6 +238,81 @@ describe("column buttons", () => {
     focusCell("two");
     click(btn("delCol"));
     expect(editor.innerHTML).toBe("<p><br></p>");
+  });
+});
+
+describe("move row buttons", () => {
+  it("↑ Row swaps the current row with the one above and keeps the caret in the moved cell", () => {
+    focusCell("b2");
+    click(btn("rowUp"));
+    expect(rows()).toEqual([["A", "B", "C"], ["a2", "b2", "c2"], ["a1", "b1", "c1"]]);
+    expect(caretCell()).toBe(cell("b2"));
+    expect(content()).toMatch(/<td>a2<\/td>.*<td>a1<\/td>/s);
+    expect(app.$("status").textContent).toBe("Saved");
+  });
+
+  it("↓ Row swaps the current row with the one below", () => {
+    focusCell("a1");
+    click(btn("rowDown"));
+    expect(rows()).toEqual([["A", "B", "C"], ["a2", "b2", "c2"], ["a1", "b1", "c1"]]);
+    expect(caretCell()).toBe(cell("a1"));
+  });
+
+  it("does nothing (and says so) when there is no row to swap with: first/last body row, or the header", () => {
+    focusCell("b1"); click(btn("rowUp"));            // first body row: the header stays on top
+    expect(rows()).toEqual([["A", "B", "C"], ["a1", "b1", "c1"], ["a2", "b2", "c2"]]);
+    expect(app.toastText()).toBe("No row above to swap with");
+    expect(caretCell()).toBe(cell("b1"));
+
+    focusCell("c2"); click(btn("rowDown"));          // last row
+    expect(rows()).toEqual([["A", "B", "C"], ["a1", "b1", "c1"], ["a2", "b2", "c2"]]);
+    expect(app.toastText()).toBe("No row below to swap with");
+
+    for (const op of ["rowUp", "rowDown"]) {         // header rows never move
+      focusCell("B"); click(btn(op));
+      expect(rows()).toEqual([["A", "B", "C"], ["a1", "b1", "c1"], ["a2", "b2", "c2"]]);
+      expect(app.toastText()).toBe("The header row stays on top");
+    }
+  });
+
+  it("moves plain <td> rows in a table without a header", () => {
+    editor.innerHTML = "<table><tbody><tr><td>one</td></tr><tr><td>two</td></tr><tr><td>three</td></tr></tbody></table>";
+    focusCell("one"); click(btn("rowDown"));
+    expect(rows()).toEqual([["two"], ["one"], ["three"]]);
+    focusCell("three"); click(btn("rowUp"));
+    expect(rows()).toEqual([["two"], ["three"], ["one"]]);
+  });
+});
+
+describe("move column buttons", () => {
+  it("← Col swaps the current column with the one on its left in every row, header included", () => {
+    focusCell("b1");
+    click(btn("colPrev"));
+    expect(rows()).toEqual([["B", "A", "C"], ["b1", "a1", "c1"], ["b2", "a2", "c2"]]);
+    expect(caretCell()).toBe(cell("b1"));
+    expect(content()).toMatch(/<th>B<\/th><th>A<\/th><th>C<\/th>/);
+  });
+
+  it("→ Col swaps with the column on its right", () => {
+    focusCell("B");
+    click(btn("colNext"));
+    expect(rows()).toEqual([["A", "C", "B"], ["a1", "c1", "b1"], ["a2", "c2", "b2"]]);
+    expect(caretCell()).toBe(cell("B"));
+  });
+
+  it("does nothing (and says so) on the first / last column", () => {
+    focusCell("a2"); click(btn("colPrev"));
+    expect(rows()).toEqual([["A", "B", "C"], ["a1", "b1", "c1"], ["a2", "b2", "c2"]]);
+    expect(app.toastText()).toBe("No column to the left to swap with");
+    focusCell("c1"); click(btn("colNext"));
+    expect(rows()).toEqual([["A", "B", "C"], ["a1", "b1", "c1"], ["a2", "b2", "c2"]]);
+    expect(app.toastText()).toBe("No column to the right to swap with");
+  });
+
+  it("leaves ragged rows that lack the neighbouring cell untouched", () => {
+    editor.innerHTML = "<table><tbody><tr><td>a</td><td>b</td></tr><tr><td>x</td></tr></tbody></table>";
+    focusCell("b"); click(btn("colPrev"));
+    expect(rows()).toEqual([["b", "a"], ["x"]]);
   });
 });
 
