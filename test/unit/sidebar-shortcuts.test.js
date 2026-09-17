@@ -86,7 +86,7 @@ describe("keyboard shortcuts", () => {
     const ev = key(body(), "s", { ctrlKey: true });
     expect(ev.defaultPrevented).toBe(true);
     expect(app.get("mode")).toBe("view");
-    expect(app.call("find", "p1").node.content).toBe("<p>ctrl s</p>");
+    expect(app.call("find", "p1").node.content).toBe("<p>ctrl s</p><p><br></p>");
   });
 
   it("Ctrl+S in view mode just re-saves", () => {
@@ -126,7 +126,7 @@ describe("keyboard shortcuts", () => {
     expect(app.get("mode")).toBe("edit");
     app.$("editor").innerHTML = "<p>folder highlighted</p>";
     key(body(), "e", { ctrlKey: true });
-    expect(app.call("find", "p1").node.content).toBe("<p>folder highlighted</p>");
+    expect(app.call("find", "p1").node.content).toBe("<p>folder highlighted</p><p><br></p>");
     expect(app.call("find", "f1").node.content).toBeUndefined();
   });
 
@@ -135,7 +135,7 @@ describe("keyboard shortcuts", () => {
     app.$("editor").innerHTML = "<p>via ctrl+e</p>";
     key(body(), "e", { ctrlKey: true });
     expect(app.get("mode")).toBe("view");
-    expect(app.call("find", "p1").node.content).toBe("<p>via ctrl+e</p>");
+    expect(app.call("find", "p1").node.content).toBe("<p>via ctrl+e</p><p><br></p>");
   });
 
   it("Ctrl+\\ toggles the sidebar", () => {
@@ -177,7 +177,7 @@ describe("keyboard shortcuts", () => {
     app.$("editor").innerHTML = "<p>esc</p>";
     key(body(), "Escape");
     expect(app.get("mode")).toBe("view");
-    expect(app.call("find", "p1").node.content).toBe("<p>esc</p>");
+    expect(app.call("find", "p1").node.content).toBe("<p>esc</p><p><br></p>");
 
     app.call("setMode", "source");
     key(body(), "Escape");
@@ -195,14 +195,14 @@ describe("beforeunload", () => {
     app.call("setMode", "edit");
     app.$("editor").innerHTML = "<p>bye</p>";
     W().dispatchEvent(new (W().Event)("beforeunload"));
-    expect(app.call("find", "p1").node.content).toBe("<p>bye</p>");
+    expect(app.call("find", "p1").node.content).toBe("<p>bye</p><p><br></p>");
   });
 
   it("writes to localStorage synchronously (the save debounce cannot fire after unload)", () => {
     app.call("setMode", "edit");
     app.$("editor").innerHTML = "<p>bye</p>";
     W().dispatchEvent(new (W().Event)("beforeunload"));
-    expect(app.stored().tree[0].children[0].content).toBe("<p>bye</p>");   // no app.flush()
+    expect(app.stored().tree[0].children[0].content).toBe("<p>bye</p><p><br></p>");   // no app.flush()
   });
 
   it("flushes a pending debounced save in view mode", () => {

@@ -55,10 +55,11 @@ describe("Code block button", () => {
   });
 
   it("keeps the paragraph the caret was in above the block", () => {
+    caret(editor.querySelector("p").firstChild, 10);          // end of "alpha text"
     click(app.$("tbBlock"));
     const pre = editor.querySelector("pre.code");
-    expect(pre.previousElementSibling.tagName).toBe("P");
-    expect(editor.querySelectorAll("p")).toHaveLength(2);   // no extra one added
+    expect(pre.previousElementSibling.textContent).toBe("alpha text");
+    expect(editor.querySelectorAll("p")).toHaveLength(3);   // original + the block's own + the page's empty last line
   });
 
   it("does nothing when the caret is already inside a block", () => {
@@ -138,10 +139,11 @@ describe("Code block button — room to navigate around blocks", () => {
   });
 
   it("does not add a line when there already is one above", () => {
-    click(app.$("tbBlock"));                              // caret was in the page's own paragraph
+    caret(editor.querySelector("p").firstChild, 10);      // caret in the page's own paragraph
+    click(app.$("tbBlock"));
     const pre = editor.querySelector("pre.code");
     expect(pre.previousElementSibling.textContent).not.toBe("");
-    expect(editor.querySelectorAll("p")).toHaveLength(2); // the original + the trailing one
+    expect(editor.querySelectorAll("p")).toHaveLength(3); // the original + the trailing one + the page's empty last line
   });
 });
 
@@ -571,7 +573,7 @@ describe("Enter inside a quote", () => {
     editor.innerHTML = "<blockquote>quo<em>ted</em> end</blockquote>";
     caret(editor.querySelector("em").firstChild, 1);
     key(editor, "Enter");
-    expect(editor.innerHTML).toBe("<blockquote>quo<em>t</em></blockquote><p><em>ed</em> end</p>");
+    expect(editor.innerHTML).toBe("<blockquote>quo<em>t</em></blockquote><p><em>ed</em> end</p><p><br></p>");
     expect(editor.querySelector("blockquote").nextElementSibling.contains(sel().startContainer)).toBe(true);
   });
 
@@ -600,10 +602,10 @@ describe("Backspace at the start of a quote", () => {
     const ev = key(editor, "Backspace");
     expect(ev.defaultPrevented).toBe(true);
     expect(editor.querySelector("blockquote")).toBeNull();
-    expect(editor.innerHTML).toBe("<p>quoted</p><p>after</p>");
+    expect(editor.innerHTML).toBe("<p>quoted</p><p>after</p><p><br></p>");
     expect(sel().collapsed).toBe(true);
     expect(editor.firstElementChild.contains(sel().startContainer)).toBe(true);
-    expect(content()).toBe("<p>quoted</p><p>after</p>");
+    expect(content()).toBe("<p>quoted</p><p>after</p><p><br></p>");
   });
 
   it("removes an empty quote that is the only content", () => {
@@ -618,7 +620,7 @@ describe("Backspace at the start of a quote", () => {
     editor.innerHTML = "<blockquote><p>one</p><p>two</p></blockquote>";
     caret(editor.querySelector("blockquote p").firstChild, 0);
     key(editor, "Backspace");
-    expect(editor.innerHTML).toBe("<p>one</p><p>two</p>");
+    expect(editor.innerHTML).toBe("<p>one</p><p>two</p><p><br></p>");
   });
 
   it("is left to the browser when the caret is not at the very start of the quote", () => {
@@ -646,7 +648,7 @@ describe("editing end to end", () => {
     input(editor);
     click(app.$("btnMode"));
     app.flush();
-    expect(app.stored().tree[0].children[0].content).toBe("<p>final</p>");
-    expect(app.$("viewer").innerHTML).toBe("<p>final</p>");
+    expect(app.stored().tree[0].children[0].content).toBe("<p>final</p><p><br></p>");
+    expect(app.$("viewer").innerHTML).toBe("<p>final</p><p><br></p>");
   });
 });

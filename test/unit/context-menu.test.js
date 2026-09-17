@@ -34,7 +34,7 @@ describe("openMenu()", () => {
     expect(app.get("mode")).toBe("edit");
     expect(app.get("openId")).toBe("p1");
     click(app.$("btnMode"));                                   // Done
-    expect(app.call("find", "p1").node.content).toBe("<p>editing alpha</p>");
+    expect(app.call("find", "p1").node.content).toBe("<p>editing alpha</p><p><br></p>");
     expect(app.call("find", "p3").node.content).not.toContain("editing alpha");
   });
 

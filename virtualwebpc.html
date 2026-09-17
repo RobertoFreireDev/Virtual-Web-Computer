@@ -1066,7 +1066,7 @@ function decorate(root){
 }
 function commit(){
   const f = openPage(); if(!f) return;
-  if(mode === "edit") raw = editor.innerHTML;
+  if(mode === "edit"){ tail(); raw = editor.innerHTML; }   // appending never moves the caret
   if(mode === "source") raw = unformat(source.value);
   f.node.content = raw;
   save(); flag("Saved");
@@ -1121,11 +1121,13 @@ function caretTo(el, atEnd = true){
   r.selectNodeContents(el); r.collapse(!atEnd);
   const s = getSelection(); s.removeAllRanges(); s.addRange(r);
 }
-/* a page ending in a code block, list or table needs a paragraph after it,
-   otherwise there is no way to keep writing */
+/* the page always ends with an empty line: after a code block, list, table or
+   image there would otherwise be no way to move the caret below it, and
+   after text it gives the cursor somewhere to go with ↓ / click */
 function tail(){
   const last = editor.lastElementChild;
-  if(!last || /^(PRE|TABLE|UL|OL|HR|BLOCKQUOTE)$/.test(last.tagName)){
+  const empty = last && last.tagName === "P" && !last.textContent.trim() && !last.querySelector("img,table,pre");
+  if(!empty){
     const p = document.createElement("p");
     p.innerHTML = "<br>";
     editor.appendChild(p);

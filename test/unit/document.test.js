@@ -225,7 +225,7 @@ describe("setMode()", () => {
     expect(app.$("btnMode").textContent).toBe("Done");
     expect(app.$("btnMode").className).toBe("btn primary");
     expect(app.$("status").textContent).toBe("Editing");
-    expect(app.$("editor").innerHTML).toBe("<p>alpha text</p>");
+    expect(app.$("editor").innerHTML).toBe("<p>alpha text</p><p><br></p>");
   });
 
   it("edit fills an empty page with an empty paragraph and sets the paragraph separator", () => {
@@ -276,8 +276,8 @@ describe("setMode()", () => {
     app.call("setMode", "source");
     app.$("source").value = "<p>from source</p>";
     app.call("setMode", "edit");
-    expect(app.get("raw")).toBe("<p>from source</p>");
-    expect(app.$("editor").innerHTML).toBe("<p>from source</p>");
+    expect(app.get("raw")).toBe("<p>from source</p><p><br></p>");
+    expect(app.$("editor").innerHTML).toBe("<p>from source</p><p><br></p>");
   });
 
   it("back to view restores the viewer and the neutral button", () => {
@@ -324,11 +324,11 @@ describe("commit()", () => {
     app.call("setMode", "edit");
     app.$("editor").innerHTML = "<p>edited</p>";
     app.call("commit");
-    expect(app.call("find", "p1").node.content).toBe("<p>edited</p>");
+    expect(app.call("find", "p1").node.content).toBe("<p>edited</p><p><br></p>");
     expect(app.$("status").textContent).toBe("Saved");
     expect(app.$("status").classList.contains("on")).toBe(true);
     app.flush();
-    expect(app.stored().tree[0].children[0].content).toBe("<p>edited</p>");
+    expect(app.stored().tree[0].children[0].content).toBe("<p>edited</p><p><br></p>");
   });
 
   it("saves the textarea in source mode", () => {
@@ -350,7 +350,7 @@ describe("commit()", () => {
     db().selected = "f1";
     app.call("commit");
     expect(app.call("find", "f1").node.content).toBeUndefined();
-    expect(app.call("find", "p1").node.content).toBe("<p>still alpha</p>");
+    expect(app.call("find", "p1").node.content).toBe("<p>still alpha</p><p><br></p>");
     db().selected = "p3";
     app.call("commit");
     expect(app.call("find", "p3").node.content).not.toContain("still alpha");
@@ -372,8 +372,8 @@ describe("mode buttons", () => {
     app.$("editor").innerHTML = "<p>via button</p>";
     click(app.$("btnMode"));
     expect(app.get("mode")).toBe("view");
-    expect(app.call("find", "p1").node.content).toBe("<p>via button</p>");
-    expect(app.$("viewer").innerHTML).toBe("<p>via button</p>");
+    expect(app.call("find", "p1").node.content).toBe("<p>via button</p><p><br></p>");
+    expect(app.$("viewer").innerHTML).toBe("<p>via button</p><p><br></p>");
   });
 
   it("HTML button enters source mode from view or edit, and back to edit with a commit", () => {
@@ -453,9 +453,45 @@ describe("tail()", () => {
   it("appends when the editor is empty", () => {
     expect(set("")).toBe("<p><br></p>");
   });
-  it("leaves paragraphs and headings alone", () => {
-    expect(set("<p>a</p>")).toBe("<p>a</p>");
-    expect(set("<h2>a</h2>")).toBe("<h2>a</h2>");
+  it("appends an empty line after a text paragraph, heading or image too — the page always ends with one", () => {
+    expect(set("<p>a</p>")).toBe("<p>a</p><p><br></p>");
+    expect(set("<h2>a</h2>")).toBe("<h2>a</h2><p><br></p>");
+    expect(set("<p><img src=\"data:image/png;base64,AA\"></p>")).toBe("<p><img src=\"data:image/png;base64,AA\"></p><p><br></p>");
+  });
+  it("adds nothing when the page already ends with an empty line", () => {
+    expect(set("<p>a</p><p><br></p>")).toBe("<p>a</p><p><br></p>");
+    expect(set("<pre></pre><p><br></p>")).toBe("<pre></pre><p><br></p>");
+    expect(set("<p></p>")).toBe("<p></p>");
+  });
+});
+
+describe("the empty line at the end of the page", () => {
+  it("is there when editing starts, even for a page ending in text", () => {
+    app.call("setMode", "edit");                  // p1 = <p>alpha text</p>
+    const kids = [...app.$("editor").children];
+    expect(kids.map(k => k.outerHTML)).toEqual(["<p>alpha text</p>", "<p><br></p>"]);
+  });
+
+  it("is restored on every commit — after a paste ending in a block, and after the user deletes it", () => {
+    app.call("setMode", "edit");
+    const editor = app.$("editor");
+    editor.innerHTML = "<p>alpha text</p><table><tbody><tr><td>x</td></tr></tbody></table>";   // e.g. a Ctrl+V of a table
+    input(editor); app.flush();                   // typing debounce → commit
+    expect(editor.lastElementChild.outerHTML).toBe("<p><br></p>");
+    expect(app.call("find", "p1").node.content).toMatch(/<\/table><p><br><\/p>$/);
+
+    editor.innerHTML = "<p>alpha text</p><pre class=\"code\" data-lang=\"plain\">x</pre>";       // trailing line deleted
+    app.call("commit");
+    expect(editor.lastElementChild.outerHTML).toBe("<p><br></p>");
+    expect(app.get("raw")).toMatch(/<p><br><\/p>$/);
+  });
+
+  it("is kept in the saved page, so old data gains it on the first edit", () => {
+    app.call("setMode", "edit");
+    app.call("commit"); app.call("setMode", "view");
+    expect(app.call("find", "p1").node.content).toBe("<p>alpha text</p><p><br></p>");
+    app.flush();
+    expect(JSON.stringify(app.stored())).toContain("<p>alpha text</p><p><br></p>");
   });
 });
 
@@ -506,7 +542,7 @@ describe("autosave while typing", () => {
     vi.advanceTimersByTime(499);
     expect(app.call("find", "p1").node.content).toBe("<p>alpha text</p>");
     vi.advanceTimersByTime(1);
-    expect(app.call("find", "p1").node.content).toBe("<p>typing</p>");
+    expect(app.call("find", "p1").node.content).toBe("<p>typing</p><p><br></p>");
     expect(app.$("status").textContent).toBe("Saved");
   });
 
@@ -518,7 +554,7 @@ describe("autosave while typing", () => {
     vi.advanceTimersByTime(400);
     expect(app.call("find", "p1").node.content).toBe("<p>alpha text</p>");
     vi.advanceTimersByTime(100);
-    expect(app.call("find", "p1").node.content).toBe("<p>12</p>");
+    expect(app.call("find", "p1").node.content).toBe("<p>12</p><p><br></p>");
   });
 
   it("commits source textarea input the same way", () => {

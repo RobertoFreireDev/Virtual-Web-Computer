@@ -252,7 +252,7 @@ describe("delete table button", () => {
     click(app.q('#dialog [data-a="1"]'));
     await tick();
     expect(table()).toBeNull();
-    expect(editor.innerHTML).toBe("<p>before</p><p><br></p><p>after</p>");
+    expect(editor.innerHTML).toBe("<p>before</p><p><br></p><p>after</p><p><br></p>");
     expect(caretCell()).toBeNull();
     expect(app.window.getSelection().getRangeAt(0).startContainer).toBe(editor.children[1]);
     expect(content()).not.toContain("<table>");

@@ -92,7 +92,7 @@ describe("Export button", () => {
     app.$("editor").innerHTML = "<p>pending</p>";
     click(app.$("btnExport"));
     await tick();
-    expect(app.call("find", "p1").node.content).toBe("<p>pending</p>");
+    expect(app.call("find", "p1").node.content).toBe("<p>pending</p><p><br></p>");
   });
 
   it("opens the picker with the whole library", async () => {
