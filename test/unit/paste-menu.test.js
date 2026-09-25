@@ -1,6 +1,6 @@
 ﻿/*
  * The "Paste" dropdown in the editing toolbar (next to Image, so only
- * visible in edit mode). Its only entry so far, "From table", turns the
+ * visible in edit mode). "From table" turns the
  * tab-separated text Excel puts on the clipboard into a table at the caret.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -39,12 +39,12 @@ describe("Paste button", () => {
     expect(app.$("toolbar").style.display).toBe("none");
   });
 
-  it("opens a dropdown with only 'From table'", () => {
+  it("opens a dropdown with From table and From markdown", () => {
     app.call("setMode", "edit");
     expect(app.$("menu").classList.contains("open")).toBe(false);
     click(app.$("tbPaste"));
     expect(app.$("menu").classList.contains("open")).toBe(true);
-    expect(menuItems()).toEqual(["From table"]);
+    expect(menuItems()).toEqual(["From table", "From markdown"]);
   });
 
   it("keeps the editor selection (mousedown is prevented) and closes on outside click", () => {

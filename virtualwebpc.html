@@ -1300,16 +1300,198 @@ function excelTable(rows){
   return `<table><thead><tr>${head.map(t => cell(t, "th")).join("")}</tr></thead><tbody>` +
     body.map(r => `<tr>${r.map(t => cell(t, "td")).join("")}</tr>`).join("") + `</tbody></table><p><br></p>`;
 }
-async function pasteExcel(keep){
-  if(!navigator.clipboard || !navigator.clipboard.readText){ toast("Clipboard blocked by the browser — paste with Ctrl+V instead"); return; }
-  let text;
-  try{ text = await navigator.clipboard.readText(); }
-  catch(e){ toast("Clipboard access denied — paste with Ctrl+V instead"); return; }
-  const rows = parseExcel(text || "");
-  if(!rows.length){ toast("Nothing to paste on the clipboard"); return; }
+/* ── from markdown ──
+   GitHub Flavored Markdown (and what Claude Code writes) → the page's HTML. A small
+   line-based converter, not a full CommonMark parser: headings (ATX + setext), paragraphs
+   (soft breaks → space, two spaces / backslash → <br>), nested lists (indent > marker's),
+   task boxes, fenced / indented code, quotes (+ GitHub [!NOTE] alerts), rules, pipe tables
+   and the ASCII tables SQL clients print (+----+ / psql ---+--- / box drawing ┌─┬─┐).
+   Raw HTML is shown as text. The result goes through clean(). */
+const MD_LANG = { js:"javascript", jsx:"javascript", mjs:"javascript", ts:"javascript", tsx:"javascript", typescript:"javascript", node:"javascript",
+  cs:"csharp", "c#":"csharp", py:"python", sh:"bash", shell:"bash", zsh:"bash", console:"bash", xml:"html", htm:"html", jsonc:"json",
+  tsql:"sql", mysql:"sql", postgresql:"sql", psql:"sql", plsql:"sql", scss:"css" };
+const mdLang = s => { s = (s || "").toLowerCase(); return Object.prototype.hasOwnProperty.call(LANGS, s) ? s : MD_LANG[s] || "plain"; };
+const MD = {
+  fence: /^ {0,3}(`{3,}|~{3,})\s*([^`\s]*)/,
+  hr:    /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/,
+  head:  /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/,
+  item:  /^( *)([-*+]|\d{1,9}[.)])(?:[ \t]+(.*)|$)/,
+  quote: /^ {0,3}>/,
+  delim: /^\s*[|+]?\s*:?-+:?\s*(?:[|+]\s*:?-+:?\s*)*[|+]?\s*$/,
+  bar:   /^\s*[|│┃║]/
+};
+const mdBorder = l => /^\s*[+┌├└╔╠╚╭╰┏┣┗]/.test(l) && /^[\s|+\-=:─━═│┃║┌┐└┘├┤┬┴┼╔╗╚╝╠╣╦╩╬╭╮╯╰┏┓┗┛┣┫┳┻╋]{3,}$/.test(l);
+const mdTable = (l, next) => l.includes("|") && next != null && /[|+]/.test(next) && MD.delim.test(next);
+const mdStart = (l, next) => MD.fence.test(l) || MD.hr.test(l) || MD.head.test(l) || MD.item.test(l) || MD.quote.test(l) ||
+  (mdBorder(l) && MD.bar.test(next || "")) || mdTable(l, next);
+const mdIndent = l => l.match(/^ */)[0].length;
+/* a table row → cells; `\|` is a literal bar, bars inside `code` do not split */
+function mdCells(l){
+  let s = l.trim(), code = false, cur = "";
+  const out = [];
+  if(/^[|│┃║]/.test(s)) s = s.slice(1);
+  if(/[|│┃║]$/.test(s) && s[s.length - 2] !== "\\") s = s.slice(0, -1);
+  for(let i = 0; i < s.length; i++){
+    const c = s[i];
+    if(c === "\\" && s[i + 1] === "|"){ cur += "|"; i++; }
+    else if(c === "`"){ code = !code; cur += c; }
+    else if(/[|│┃║]/.test(c) && !code){ out.push(cur.trim()); cur = ""; }
+    else cur += c;
+  }
+  out.push(cur.trim());
+  return out;
+}
+function mdTableHtml(head, rows){
+  const cell = (t, tag) => `<${tag}>${t ? mdInline(t) : "<br>"}</${tag}>`;
+  const fit = r => head.map((_, k) => r[k] || "");
+  return `<table><thead><tr>${head.map(t => cell(t, "th")).join("")}</tr></thead><tbody>` +
+    rows.map(r => `<tr>${fit(r).map(t => cell(t, "td")).join("")}</tr>`).join("") + `</tbody></table>`;
+}
+/* inline markup; finished pieces are parked as \u0001n\u0002 so later passes can't touch them */
+function mdInline(s, keep){
+  const top = !keep;
+  keep = keep || [];
+  const put = h => "\u0001" + (keep.push(h) - 1) + "\u0002";
+  s = s.replace(/(`+)(.+?)\1(?!`)/g, (m, f, c) => put(`<code>${esc(/^ .* $/.test(c) ? c.slice(1, -1) : c)}</code>`))
+    .replace(/\\([\\`*_{}\[\]()#+\-.!|~<>"'])/g, (m, c) => put(esc(c)))
+    .replace(/!\[([^\]]*)\]\(\s*<?([^\s)>]*)>?(?:\s+"([^"]*)")?\s*\)/g,
+      (m, alt, src, t) => put(`<img src="${attr(src)}" alt="${attr(alt)}"${t ? ` title="${attr(t)}"` : ""}>`))
+    .replace(/\[((?:[^\[\]]|\[[^\]]*\])*)\]\(\s*<?([^\s)>]*(?:\([^\s)]*\)[^\s)>]*)*)>?(?:\s+"([^"]*)")?\s*\)/g,
+      (m, text, href, t) => put(`<a href="${attr(href)}"${t ? ` title="${attr(t)}"` : ""}>${mdInline(text, keep)}</a>`))
+    .replace(/<((?:https?|mailto):[^\s<>]+)>/g, (m, u) => put(`<a href="${attr(u)}">${esc(u)}</a>`));
+  s = esc(s)
+    .replace(/\bhttps?:\/\/[^\s<>"\u0001]*[^\s<>".,;:!?)\]'*_~\u0001]/g, u => put(`<a href="${u}">${u}</a>`))
+    .replace(/\*\*\*(?=\S)(.+?)(?<=\S)\*\*\*/g, "<strong><em>$1</em></strong>")
+    .replace(/(^|\W)___(?=\S)(.+?)(?<=\S)___(?!\w)/g, "$1<strong><em>$2</em></strong>")
+    .replace(/\*\*(?=\S)(.+?)(?<=\S)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|\W)__(?=\S)(.+?)(?<=\S)__(?!\w)/g, "$1<strong>$2</strong>")
+    .replace(/(^|[^\w*])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?![\w*])/g, "$1<em>$2</em>")
+    .replace(/(^|\W)_(?=[^\s_])(.+?)(?<=[^\s_])_(?!\w)/g, "$1<em>$2</em>")
+    .replace(/~~(?=\S)(.+?)(?<=\S)~~/g, "<s>$1</s>");
+  if(top) while(s.includes("\u0001")) s = s.replace(/\u0001(\d+)\u0002/g, (m, n) => keep[n]);
+  return s;
+}
+function mdBlocks(lines){
+  let out = "", i = 0, m;
+  const blank = l => l == null || !l.trim();
+  while(i < lines.length){
+    const l = lines[i], next = lines[i + 1];
+    if(blank(l)){ i++; continue; }
+    if((m = MD.fence.exec(l))){
+      const close = new RegExp(`^ {0,3}${m[1][0]}{${m[1].length},}\\s*$`), strip = new RegExp(`^ {0,${mdIndent(l)}}`), body = [];
+      for(i++; i < lines.length && !close.test(lines[i]); i++) body.push(lines[i].replace(strip, ""));
+      i++;
+      out += `<pre class="code" data-lang="${mdLang(m[2])}">${esc(body.join("\n"))}\n</pre>`;
+    }
+    else if((m = MD.head.exec(l))){ out += `<h${m[1].length}>${mdInline(m[2] || "")}</h${m[1].length}>`; i++; }
+    else if(MD.hr.test(l)){ out += "<hr>"; i++; }
+    else if(MD.quote.test(l)){
+      const body = [];
+      while(i < lines.length && (MD.quote.test(lines[i]) || (!blank(lines[i]) && !blank(lines[i - 1]) && !mdStart(lines[i], lines[i + 1]))))
+        body.push(lines[i++].replace(/^ {0,3}> ?/, ""));
+      const alert = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/i.exec(body[0]);
+      if(alert) body.splice(0, 1, `**${alert[1][0].toUpperCase() + alert[1].slice(1).toLowerCase()}**`, "");
+      out += `<blockquote>${mdBlocks(body)}</blockquote>`;
+    }
+    else if(mdBorder(l) && MD.bar.test(next || "")){          // +----+ / ┌───┐ ASCII table
+      const rows = [];
+      for(; i < lines.length && (mdBorder(lines[i]) || MD.bar.test(lines[i])); i++)
+        if(!mdBorder(lines[i])) rows.push(mdCells(lines[i]));
+      out += mdTableHtml(rows[0], rows.slice(1));
+    }
+    else if(mdTable(l, next)){                                // | a | b | / psql a | b
+      const head = mdCells(l), rows = [];
+      for(i += 2; i < lines.length && !blank(lines[i]) && lines[i].includes("|"); i++) rows.push(mdCells(lines[i]));
+      out += mdTableHtml(head, rows);
+    }
+    else if((m = MD.item.exec(l))){
+      const ord = /\d/.test(m[2]), base = m[1].length, items = [];
+      while(i < lines.length && (m = MD.item.exec(lines[i])) && /\d/.test(m[2]) === ord && !MD.hr.test(lines[i])){
+        const gap = lines[i].slice(m[1].length + m[2].length).match(/^[ \t]*/)[0].length;
+        const col = m[1].length + m[2].length + (gap > 4 || !m[3] ? 1 : gap);
+        const body = [(m[3] || "").replace(/^\[([ xX])\][ \t]+/, (x, c) => c === " " ? "☐ " : "☑ ")];
+        for(i++; i < lines.length; i++){
+          const t = lines[i];
+          if(blank(t)){
+            let j = i; while(j < lines.length && blank(lines[j])) j++;
+            if(j < lines.length && mdIndent(lines[j]) > base){ for(; i < j; i++) body.push(""); i--; continue; }
+            break;
+          }
+          if(mdIndent(t) > base) body.push(t.slice(Math.min(mdIndent(t), col)));
+          else if(!blank(lines[i - 1]) && !mdStart(t, lines[i + 1])) body.push(t.trim());
+          else break;
+        }
+        items.push(mdBlocks(body).replace(/^<p>([\s\S]*?)<\/p>/, "$1"));
+        let j = i; while(j < lines.length && blank(lines[j])) j++;
+        if(j < lines.length && MD.item.test(lines[j]) && mdIndent(lines[j]) <= base + 1) i = j; else break;
+      }
+      const tag = ord ? "ol" : "ul";
+      out += `<${tag}>${items.map(h => `<li>${h}</li>`).join("")}</${tag}>`;
+    }
+    else if(/^ {4}/.test(l)){
+      const body = [];
+      for(; i < lines.length && (blank(lines[i]) || /^ {4}/.test(lines[i])); i++) body.push(lines[i].slice(4));
+      while(body.length && !body[body.length - 1].trim()) body.pop();
+      out += `<pre class="code" data-lang="plain">${esc(body.join("\n"))}\n</pre>`;
+    }
+    else {
+      const para = [l];
+      for(i++; i < lines.length && !blank(lines[i]); i++){
+        const t = lines[i];
+        if(/^ {0,3}(=+|-+)\s*$/.test(t) || mdStart(t, lines[i + 1])) break;
+        para.push(t);
+      }
+      const setext = i < lines.length && /^ {0,3}(=+|-+)\s*$/.exec(lines[i]);
+      const text = para.map((t, k) => {
+        if(k === para.length - 1) return t.trim();
+        return t.trim().replace(/\\$/, "") + (/ {2,}$|\\$/.test(t) ? "\u0003" : " ");
+      }).join("");
+      const html = mdInline(text).replace(/\u0003/g, "<br>");
+      if(setext){ const n = setext[1][0] === "=" ? 1 : 2; out += `<h${n}>${html}</h${n}>`; i++; }
+      else out += `<p>${html}</p>`;
+    }
+  }
+  return out;
+}
+function mdToHtml(text){
+  return clean(mdBlocks(lf(text).replace(/^[ \t]+/gm, w => w.replace(/\t/g, "    ")).split("\n")));
+}
+/* both "paste from…" entries read text the same way; null = nothing usable (already toasted) */
+async function clipText(){
+  if(!navigator.clipboard || !navigator.clipboard.readText){ toast("Clipboard blocked by the browser — paste with Ctrl+V instead"); return null; }
+  try{ return (await navigator.clipboard.readText()) || ""; }
+  catch(e){ toast("Clipboard access denied — paste with Ctrl+V instead"); return null; }
+}
+/* restores the caret captured when the menu opened; blocks cannot go inside a code block */
+function pasteAt(keep){
   editor.focus();
   if(keep){ const s = getSelection(); s.removeAllRanges(); s.addRange(keep); }
-  if(currentPre()) caretTo(editor.lastElementChild || editor);   // a table cannot live inside a code block
+  if(currentPre()) caretTo(editor.lastElementChild || editor);
+}
+async function pasteMd(keep){
+  const text = await clipText();
+  if(text === null) return;
+  if(!text.trim()){ toast("Nothing to paste on the clipboard"); return; }
+  let html = mdToHtml(text);
+  if(!/<\/(p|h\d)>$/.test(html)) html += "<p><br></p>";     // somewhere to keep typing after a list/table/block
+  const had = new Set(editor.querySelectorAll("pre,table,hr"));
+  pasteAt(keep);
+  document.execCommand("insertHTML", false, html);
+  /* same as the Code block button: a block at the top (or glued to another) gets a line above it */
+  editor.querySelectorAll(":scope > pre, :scope > table, :scope > hr").forEach(b => {
+    const prev = b.previousElementSibling;
+    if(!had.has(b) && (!prev || /^(PRE|TABLE|HR)$/.test(prev.tagName))){
+      const p = document.createElement("p"); p.innerHTML = "<br>"; b.before(p);
+    }
+  });
+  raw = editor.innerHTML; commit(); syncBlocks();
+}
+async function pasteExcel(keep){
+  const text = await clipText();
+  if(text === null) return;
+  const rows = parseExcel(text);
+  if(!rows.length){ toast("Nothing to paste on the clipboard"); return; }
+  pasteAt(keep);
   document.execCommand("insertHTML", false, excelTable(rows));
   raw = editor.innerHTML; commit(); syncBlocks();
 }
@@ -1318,7 +1500,7 @@ $("tbPaste").onclick = e => {
   if(e.currentTarget._open) return;         // second click on the button closes (the global mousedown already did)
   const s = getSelection(), keep = s.rangeCount ? s.getRangeAt(0).cloneRange() : null;   // menu clicks drop the caret
   const r = e.currentTarget.getBoundingClientRect();
-  showMenu(r.left, r.bottom + 4, [["From table", () => pasteExcel(keep)]]);
+  showMenu(r.left, r.bottom + 4, [["From table", () => pasteExcel(keep)], ["From markdown", () => pasteMd(keep)]]);
   menuEl._of = "paste";
 };
 
