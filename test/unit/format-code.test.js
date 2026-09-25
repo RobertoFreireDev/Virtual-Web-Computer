@@ -78,6 +78,14 @@ describe("JSON", () => {
   it("throws a readable error on invalid input", () => {
     expect(() => fmt("json", "{a:1}")).toThrow("not valid JSON");
   });
+  it("unescapes JSON pasted as an escaped string (\\\" quotes) before formatting", () => {
+    expect(fmt("json", '{\\"Name\\":\\"Alice\\",\\"Age\\":30}')).toBe('{\n  "Name": "Alice",\n  "Age": 30\n}');
+    expect(fmt("json", '{\\"a\\":\\"x\\\\\\"y\\"}')).toBe('{\n  "a": "x\\"y"\n}');   // an escaped quote inside a value survives
+  });
+  it("leaves valid JSON strings alone and still rejects escaped garbage", () => {
+    expect(fmt("json", '"{\\"a\\":1}"')).toBe('"{\\"a\\":1}"');
+    expect(() => fmt("json", '{\\"a\\":}')).toThrow("not valid JSON");
+  });
 });
 
 describe("SQL", () => {

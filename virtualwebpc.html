@@ -877,9 +877,15 @@ function fmtClike(code, unit, lineComment){
   flush();
   return joinLines(lines);
 }
+/* JSON: invalid text is retried once as the body of a JSON string literal, so escaped
+   JSON copied out of a log or source code ({\"a\":1}) is unescaped and formatted. */
 function fmtJson(code){
   let v;
-  try{ v = JSON.parse(code); }catch(e){ throw new Error("not valid JSON"); }
+  try{ v = JSON.parse(code); }
+  catch(e){
+    try{ v = JSON.parse(JSON.parse('"' + code.trim().replace(/\r?\n/g, "\\n").replace(/\t/g, "\\t") + '"')); }
+    catch(e2){ throw new Error("not valid JSON"); }
+  }
   return JSON.stringify(v, null, 2);
 }
 /* SQL: keywords upper-cased, one clause per line, AND/OR indented under their clause,
