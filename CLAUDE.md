@@ -111,6 +111,28 @@ state and functions are top-level bindings, in this order:
 - When changing behaviour, update or add tests in `test/unit/` — the suite
   exercises every button and handler through the real markup.
 
+## Workflow for new features (test-first, mandatory)
+
+Every new feature or behaviour change the user asks for is built **test-first**,
+in this order — no step may be skipped:
+
+1. **Write the unit test(s)** in `test/unit/` (the existing file for that
+   feature area, or a new `*.test.js`) that describe the requested behaviour
+   through the real markup/handlers, before touching `virtualwebpc.html`.
+2. **Run them and watch them fail** (`cd test && npx vitest run unit/<file>`).
+   Confirm they fail for the expected reason (missing behaviour), not because of
+   a typo or a broken test. A test that passes before the change proves nothing —
+   fix the test.
+3. **Implement the feature** in `virtualwebpc.html`.
+4. **Run the new tests and the full suite** (`npm test`) — all must pass. Do not
+   weaken or delete an assertion to make it pass.
+5. Update this file (architecture table, shortcuts, notes) when the feature adds
+   or changes names or behaviour.
+
+When reporting back, state that the tests were seen failing first and passing
+after, with the test names. Bug fixes follow the same loop: a test reproducing
+the bug must fail before the fix.
+
 ## Known bugs
 
 None open. When you find one you are not fixing right away, add a test that
